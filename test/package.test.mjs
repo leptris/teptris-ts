@@ -5,18 +5,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync as fsMkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-test("npm pack ships the entry, the wasm and the types", () => {
-  const out = execFileSync("npm", ["pack", "--dry-run", "--json"], {
-    cwd: root,
+// npm and npx are .cmd shims on Windows — spawnSync cannot execute
+// them without a shell. Plain .exe targets (node) need no shell.
+function run(cmd, args, opts = {}) {
+  return execFileSync(cmd, args, {
     encoding: "utf8",
+    shell: process.platform === "win32",
+    ...opts,
   });
+}
+
+function mkdirp(dir) {
+  fsMkdirSync(dir, { recursive: true });
+}
+
+
+test("npm pack ships the entry, the wasm and the types", () => {
+  const out = run("npm", ["pack", "--dry-run", "--json"], { cwd: root });
   const files = JSON.parse(out)[0].files.map((f) => f.path);
   for (const need of [
     "src/index.js",
@@ -33,15 +45,12 @@ test("npm pack ships the entry, the wasm and the types", () => {
 test("a fresh consumer can install and use the package", () => {
   const dir = mkdtempSync(join(tmpdir(), "teptris-pkg-"));
   try {
-    const [tarball] = execFileSync("npm", ["pack", "--pack-destination", dir], {
-      cwd: root,
-      encoding: "utf8",
-    }).trim().split("\n");
+    const [tarball] = run("npm", ["pack", "--pack-destination", dir], { cwd: root }).trim().split("\n");
     const consumer = join(dir, "consumer");
-    execFileSync("mkdir", ["-p", consumer]);
+    mkdirp(consumer);
     writeFileSync(join(consumer, "package.json"), '{ "private": true }\n');
-    execFileSync("npm", ["install", "--no-audit", "--no-fund", join(dir, tarball)],
-                 { cwd: consumer, encoding: "utf8" });
+    run("npm", ["install", "--no-audit", "--no-fund", join(dir, tarball)],
+        { cwd: consumer });
     const script = `
       import assert from "node:assert/strict";
       const { init } = await import("teptris");
@@ -68,7 +77,7 @@ test("the type declarations type-check against a consumer", () => {
   const dir = mkdtempSync(join(tmpdir(), "teptris-ts-"));
   try {
     const consumer = join(dir, "consumer");
-    execFileSync("mkdir", ["-p", consumer]);
+    mkdirp(consumer);
     writeFileSync(join(consumer, "package.json"),
                   '{ "private": true, "type": "module" }\n');
     writeFileSync(join(consumer, "tsconfig.json"), JSON.stringify({
@@ -90,14 +99,11 @@ test("the type declarations type-check against a consumer", () => {
       const j: string = api.dumpJson(doc);
       console.log(n, s, j);
     `);
-    const [tarball] = execFileSync("npm", ["pack", "--pack-destination", dir], {
-      cwd: root,
-      encoding: "utf8",
-    }).trim().split("\n");
-    execFileSync("npm", ["install", "--no-audit", "--no-fund", join(dir, tarball)],
-                 { cwd: consumer, encoding: "utf8" });
-    execFileSync("npx", ["-y", "-p", "typescript@5", "tsc", "-p", "tsconfig.json"],
-                 { cwd: consumer, encoding: "utf8" });
+    const [tarball] = run("npm", ["pack", "--pack-destination", dir], { cwd: root }).trim().split("\n");
+    run("npm", ["install", "--no-audit", "--no-fund", join(dir, tarball)],
+        { cwd: consumer });
+    run("npx", ["-y", "-p", "typescript@5", "tsc", "-p", "tsconfig.json"],
+        { cwd: consumer });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
