@@ -70,3 +70,26 @@ jobs:
             sleep 1
           done
           echo "browser smoke: no verdict within timeout"; kill $SRV; exit 1
+
+  # JS tier: teptris (wasm) vs the JS ecosystem's parsers — report
+  # only, no gate (runner noise; the family referee limit applies).
+  js-tier:
+    name: js tier bench (report only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout libteptris (the C core)
+        uses: actions/checkout@v4
+        with:
+          repository: leptris/teptris
+          path: teptris-engine
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: mymindstorm/setup-emsdk@v14
+      - run: npm install --no-audit --no-fund
+      - run: bash build.sh
+        env:
+          ENGINESRC: ${{ github.workspace }}/teptris-engine/src
+      - run: python3 teptris-engine/scripts/gen_bench_corpus.py corpus
+      - run: node benchmark/js_tier.mjs corpus 20

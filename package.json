@@ -22,5 +22,9 @@
   "engines": {
     "node": ">=20"
   },
-  "types": "src/index.d.ts"
+  "types": "src/index.d.ts",
+  "devDependencies": {
+    "@iarna/toml": "^2.2.5",
+    "smol-toml": "^1.9.1"
+  }
 }
