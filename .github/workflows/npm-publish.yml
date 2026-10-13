@@ -1,7 +1,7 @@
-# Publish teptris-wasm to npm on a published GitHub release (the
+# Publish teptris-ts to npm on a published GitHub release (the
 # owner's gate) or manual dispatch. npm Trusted Publishing (OIDC):
 # id-token: write, no NPM_TOKEN secret. One-time owner setup on
-# npmjs.com: the package's trusted publisher = leptris/teptris-wasm,
+# npmjs.com: the package's trusted publisher = leptris/teptris-ts,
 # workflow "npm-publish.yml". Trusted publishing needs npm >= 11.5.1
 # (Node 24 bundles npm 11).
 name: npm publish
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   publish:
-    name: Build and publish teptris-wasm to npm
+    name: Build and publish teptris-ts to npm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
