@@ -28,7 +28,18 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 3.1.74
-      - run: bash build.sh
+      - name: Build (zero-warning gate)
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+          # The wasm32 build is the only lane that compiles the engine with
+          # 32-bit size_t/uintptr_t — warnings there are real portability
+          # bugs (truncated 64-bit constants, UB shifts), not noise.
+          ! grep -q "warning:" build.log || {
+            echo "::error::emcc emitted warnings — wasm32 portability class"
+            exit 1
+          }
         env:
           ENGINESRC: ${{ github.workspace }}/teptris/src
       - uses: actions/setup-node@v4
@@ -88,7 +99,18 @@ jobs:
           node-version: "22"
       - uses: mymindstorm/setup-emsdk@v14
       - run: npm install --no-audit --no-fund
-      - run: bash build.sh
+      - name: Build (zero-warning gate)
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+          # The wasm32 build is the only lane that compiles the engine with
+          # 32-bit size_t/uintptr_t — warnings there are real portability
+          # bugs (truncated 64-bit constants, UB shifts), not noise.
+          ! grep -q "warning:" build.log || {
+            echo "::error::emcc emitted warnings — wasm32 portability class"
+            exit 1
+          }
         env:
           ENGINESRC: ${{ github.workspace }}/teptris-engine/src
       - run: python3 teptris-engine/scripts/gen_bench_corpus.py corpus
