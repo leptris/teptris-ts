@@ -2,9 +2,9 @@
 # owner's gate) or manual dispatch. npm Trusted Publishing (OIDC):
 # id-token: write, no NPM_TOKEN secret. One-time owner setup on
 # npmjs.com: the package's trusted publisher = leptris/teptris-ts,
-# workflow "npm-publish.yml". Trusted publishing needs npm >= 11.5.1
+# workflow "publish.yml". Trusted publishing needs npm >= 11.5.1
 # (Node 24 bundles npm 11).
-name: npm publish
+name: npm publish (publish.yml)
 
 on:
   workflow_dispatch:
