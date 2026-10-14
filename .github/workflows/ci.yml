@@ -97,7 +97,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      # Same pin as the matrix: an unpinned emsdk deprecates
+      # -s WASM_BIGINT=1, and 3.1.74 still needs that flag (it
+      # defaults OFF; i64 exports reject BigInt without it).
       - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.74
       - run: npm install --no-audit --no-fund
       - name: Build (zero-warning gate)
         shell: bash
