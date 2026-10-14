@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ENGINESRC="${ENGINESRC:-../teptris/src}"
 mkdir -p dist
-emcc -O3 -std=c99 \
+emcc -O3 -std=c99 -Wall -Wextra \
   -I"$ENGINESRC/include" -I"$ENGINESRC" \
   src/teptris_wasm.c \
   "$ENGINESRC"/teptris/*.c \
