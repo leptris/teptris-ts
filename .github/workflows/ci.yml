@@ -19,13 +19,13 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: [20, 22]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: leptris/teptris
           path: teptris
           ref: main
-      - uses: mymindstorm/setup-emsdk@v14
+      - uses: mymindstorm/setup-emsdk@v16
         with:
           version: 3.1.74
       - name: Build (zero-warning gate)
@@ -42,7 +42,7 @@ jobs:
           }
         env:
           ENGINESRC: ${{ github.workspace }}/teptris/src
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - run: npm test
@@ -51,14 +51,14 @@ jobs:
     name: browser smoke (headless chrome)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Checkout engine repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: leptris/teptris
           ref: main
           path: teptris
-      - uses: mymindstorm/setup-emsdk@v14
+      - uses: mymindstorm/setup-emsdk@v16
         with:
           version: 3.1.74
       - name: Build the module
@@ -88,19 +88,19 @@ jobs:
     name: js tier bench (report only)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Checkout libteptris (the C core)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: leptris/teptris
           path: teptris-engine
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       # Same pin as the matrix: an unpinned emsdk deprecates
       # -s WASM_BIGINT=1, and 3.1.74 still needs that flag (it
       # defaults OFF; i64 exports reject BigInt without it).
-      - uses: mymindstorm/setup-emsdk@v14
+      - uses: mymindstorm/setup-emsdk@v16
         with:
           version: 3.1.74
       - run: npm install --no-audit --no-fund
