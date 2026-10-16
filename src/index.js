@@ -5,7 +5,7 @@ const KIND_OFFSET = 4, KIND_LOCAL_DT = 5, KIND_DATE = 6, KIND_TIME = 7;
 
 function cstr(mod, s) {
   const bytes = mod.lengthBytesUTF8(s) + 1;
-  const ptr = mod._malloc(bytes);
+  const ptr = mod._teptris_wasm_alloc(bytes);
   mod.stringToUTF8(s, ptr, bytes);
   return ptr;
 }
@@ -199,7 +199,129 @@ export function initApi(mod) {
     return UTF8ToString(mod._teptris_version_string());
   }
 
-  return { loads, dump, dumpJson, engineVersion };
+  // ---- descriptor plans: compile once, materialize only planned keys
+
+  function planError() {
+    const e = new Error(UTF8ToString(mod._teptris_wasm_last_error()));
+    e.line = mod._teptris_wasm_last_error_line();
+    e.column = mod._teptris_wasm_last_error_column();
+    return e;
+  }
+
+  // rows: "name" (scalar) | { name, kind: "collection" | "raw" } |
+  // { name, rows: [...] } (nested). Returns an opaque plan handle.
+  function planBuild(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new TypeError("planBuild expects a non-empty array of rows");
+    }
+    const flat = []; // { np, kind, sub }
+    const first = [0];
+    const namePtrs = [];
+    const pending = []; // [flatSlot, children]
+    for (const r of rows) {
+      const name = typeof r === "string" ? r : r.name;
+      let kind = 1; // scalar
+      if (typeof r === "object" && Array.isArray(r.rows)) {
+        kind = 3; // nested — sub patched after the child block
+        const slot = flat.length;
+        const np = mod._teptris_wasm_alloc(name.length + 1);
+        stringToUTF8(name, np, name.length + 1);
+        namePtrs.push(np);
+        flat.push({ np, kind, sub: 0 });
+        pending.push([slot, r.rows]);
+      } else {
+        if (typeof r === "object" && r.kind === "collection") kind = 2;
+        else if (typeof r === "object" && r.kind === "raw") kind = 4;
+        const np = mod._teptris_wasm_alloc(name.length + 1);
+        stringToUTF8(name, np, name.length + 1);
+        namePtrs.push(np);
+        flat.push({ np, kind, sub: 0 });
+      }
+    }
+    // parent rows first; sub-plans laid out after them (first[] grows
+    // in plan order — the C layout contract). SIBLING nested rows must
+    // not capture the same index: patch sub after each child block.
+    for (const [slot, children] of pending) {
+      first.push(flat.length);
+      flattenInto(children, flat, first, namePtrs, pending);
+      flat[slot].sub = first.length - 1;
+    }
+    // the end sentinel for the last plan (first[] has plan_count+1
+    // entries — its absence made every sub index point past the end)
+    first.push(flat.length);
+    const namesBuf = mod._teptris_wasm_alloc(4 * flat.length);
+    const kindsBuf = mod._teptris_wasm_alloc(flat.length);
+    const subsBuf = mod._teptris_wasm_alloc(4 * flat.length);
+    const firstBuf = mod._teptris_wasm_alloc(4 * first.length);
+    flat.forEach((f, i) => {
+      mod._teptris_wasm_poke_u32(namesBuf, i, f.np);
+      mod._teptris_wasm_poke_u8(kindsBuf, i, f.kind);
+      mod._teptris_wasm_poke_u32(subsBuf, i, f.sub);
+    });
+    first.forEach((v, i) => mod._teptris_wasm_poke_u32(firstBuf, i, v));
+    const plan = mod._teptris_wasm_plan_build(
+      namesBuf, kindsBuf, subsBuf, flat.length, firstBuf, first.length);
+    namePtrs.forEach((np) => mod._teptris_wasm_free(np));
+    mod._teptris_wasm_free(namesBuf);
+    mod._teptris_wasm_free(kindsBuf);
+    mod._teptris_wasm_free(subsBuf);
+    mod._teptris_wasm_free(firstBuf);
+    if (!plan) {
+      throw planError();
+    }
+    return plan;
+  }
+
+  function flattenInto(rows, flat, first, namePtrs, pending) {
+    const slots = []; // [flatSlot, children]
+    for (const r of rows) {
+      const name = typeof r === "string" ? r : r.name;
+      let kind = 1;
+      if (typeof r === "object" && Array.isArray(r.rows)) {
+        kind = 3;
+        const slot = flat.length;
+        const np = mod._teptris_wasm_alloc(name.length + 1);
+        stringToUTF8(name, np, name.length + 1);
+        namePtrs.push(np);
+        flat.push({ np, kind, sub: 0 });
+        slots.push([slot, r.rows]);
+      } else {
+        if (typeof r === "object" && r.kind === "collection") kind = 2;
+        else if (typeof r === "object" && r.kind === "raw") kind = 4;
+        const np = mod._teptris_wasm_alloc(name.length + 1);
+        stringToUTF8(name, np, name.length + 1);
+        namePtrs.push(np);
+        flat.push({ np, kind, sub: 0 });
+      }
+    }
+    for (const [slot, children] of slots) {
+      first.push(flat.length);
+      flattenInto(children, flat, first, namePtrs, pending);
+      flat[slot].sub = first.length - 1;
+    }
+  }
+
+  function planWalk(plan, toml) {
+    if (typeof toml !== "string") {
+      throw new TypeError("planWalk expects a TOML string");
+    }
+    const p = cstr(mod, toml);
+    const st = mod._teptris_wasm_plan_walk(plan, p, lengthBytesUTF8(toml));
+    freeCstr(mod, p);
+    if (st !== 0) {
+      throw planError();
+    }
+    const jptr = mod._teptris_wasm_json();
+    const value = JSON.parse(UTF8ToString(jptr));
+    mod._teptris_wasm_free(jptr);
+    return value;
+  }
+
+  function planFree(plan) {
+    mod._teptris_wasm_plan_free(plan);
+  }
+
+  return { loads, dump, dumpJson, planBuild, planWalk, planFree, engineVersion };
 }
 
 // The consumer entry: instantiate the engine once, get the API.
