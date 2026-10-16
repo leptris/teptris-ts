@@ -4,7 +4,8 @@ import initModule from "../dist/teptris.mjs";
 import teptrisInit, { init, initApi } from "../src/index.js";
 
 // the consumer path: init() loads + instantiates + wraps
-const { loads, dump, dumpJson, engineVersion } = await init();
+const { loads, dump, dumpJson, planBuild, planWalk, planFree,
+  engineVersion } = await init();
 
 test("initApi wraps a raw module (advanced path)", async () => {
   const mod = await initModule();
@@ -79,4 +80,83 @@ test("dumpJson rejects non-table roots like dump", () => {
 
 test("engineVersion reports", () => {
   assert.match(engineVersion(), /^\d+\.\d+\./);
+});
+
+test("planWalk materializes only planned keys", () => {
+  const plan = planBuild([
+    "title",
+    "pi",
+    { name: "owner", rows: ["name"] },
+    "secret",
+  ]);
+  const view = planWalk(
+    plan,
+    'title = "d"\npi = 3.5\nsecret = "x"\n[owner]\nname = "r"\nk = 9\n');
+  assert.deepEqual(view,
+    { title: "d", pi: 3.5, secret: "x", owner: { name: "r" } });
+  planFree(plan);
+});
+
+test("planWalk: missing and mismatched rows are absent (no nulls)", () => {
+  const plan = planBuild([
+    "missing",
+    { name: "pi", kind: "collection" },
+    { name: "missing_table", kind: "raw" },
+  ]);
+  const view = planWalk(plan, "pi = 3.5\n");
+  assert.deepEqual(view, {});
+  planFree(plan);
+});
+
+test("planWalk: datetimes come back as RFC 3339 strings", () => {
+  const plan = planBuild(["at"]);
+  const view = planWalk(plan, "at = 2026-10-09T12:00:00Z\n");
+  assert.equal(view.at, "2026-10-09T12:00:00Z");
+  planFree(plan);
+});
+
+test("planWalk: raw rows take the untouched subtree", () => {
+  const plan = planBuild([
+    { name: "extra", kind: "raw" },
+    { name: "items", kind: "raw" },
+  ]);
+  const view = planWalk(
+    plan,
+    'x = 1\n[extra]\nk = 1\n[[items]]\nid = 1\n[[items]]\nid = 2\n');
+  assert.deepEqual(view, { extra: { k: 1 }, items: [{ id: 1 }, { id: 2 }] });
+  planFree(plan);
+});
+
+test("planWalk: sibling nested rows keep their own sub-plans", () => {
+  const plan = planBuild([
+    { name: "a", rows: ["x"] },
+    { name: "b", rows: ["y"] },
+  ]);
+  const view = planWalk(plan, "[a]\nx = 1\n[b]\ny = 2\n");
+  assert.deepEqual(view, { a: { x: 1 }, b: { y: 2 } });
+  planFree(plan);
+});
+
+test("planWalk: one plan serves many documents", () => {
+  const plan = planBuild(["v"]);
+  assert.deepEqual(planWalk(plan, "v = 1\n"), { v: 1 });
+  assert.deepEqual(planWalk(plan, "v = 2\n"), { v: 2 });
+  planFree(plan);
+});
+
+test("planWalk: a scalar row over a table value is absent", () => {
+  const plan = planBuild(["t"]);
+  const view = planWalk(plan, "[t]\nk = 1\n");
+  assert.deepEqual(view, {});
+  planFree(plan);
+});
+
+test("planWalk surfaces parse errors with position", () => {
+  const plan = planBuild(["a"]);
+  assert.throws(() => planWalk(plan, "bogus ="), (e) => e.line >= 1);
+  planFree(plan);
+});
+
+test("planBuild rejects empty plans", () => {
+  assert.throws(() => planBuild([]), TypeError);
 });

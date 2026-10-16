@@ -47,6 +47,28 @@ export interface TeptrisApi {
 
   /** The libteptris engine version inside this build. */
   engineVersion(): string;
+
+  /** Compile a descriptor plan (once) — materialize only the planned
+   *  keys of any document via planWalk. Rows: a string name is a
+   *  scalar; kind "collection" walks an array; kind "raw" takes the
+   *  untouched subtree; rows: [...] walks a nested table. */
+  planBuild(rows: PlanRowSpec[]): number;
+
+  /** Walk one TOML document against the plan; returns only the
+   *  planned keys (natural shapes: RFC 3339 datetime strings,
+   *  non-finite floats as null). Throws on parse/plan errors. */
+  planWalk(plan: number, toml: string): TomlTable;
+
+  /** Release a compiled plan. */
+  planFree(plan: number): void;
+}
+
+/** One planned key of a {@link PlanRowSpec} tree. */
+export interface PlanRowSpec {
+  name: string;
+  kind?: "scalar" | "collection" | "raw";
+  /** Nested table rows — makes this row a nested table. */
+  rows?: PlanRowSpec[];
 }
 
 /** Instantiate the WebAssembly engine and return the API. */
