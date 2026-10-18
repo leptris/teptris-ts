@@ -1,6 +1,6 @@
 {
   "name": "teptris",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "TOML for JavaScript/TypeScript at libteptris speed (WebAssembly, no fallback) - version tracks the engine ({engine}.{iteration}; npm semver is 3-part)",
   "type": "module",
   "main": "src/index.js",
