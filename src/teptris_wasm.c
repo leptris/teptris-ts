@@ -134,6 +134,34 @@ int teptris_wasm_builder_close(void *b) {
 static char *g_toml;
 static size_t g_toml_len;
 
+/* fused dumps: the JS side encodes one op-stream (writer grammar),
+ * this builds TOML in one crossing - no per-value builder calls, no
+ * DOM */
+EMSCRIPTEN_KEEPALIVE
+int teptris_wasm_dump_ops(const uint8_t *ops, size_t len) {
+    teptris_writer *w = teptris_writer_new();
+    if (w == NULL) {
+        snprintf(last_error, sizeof last_error, "writer alloc failed");
+        return (int)TEPTRIS_ERR_ALLOC;
+    }
+    teptris_status st = teptris_writer_feed(w, ops, len);
+    if (st == TEPTRIS_OK) {
+        st = teptris_writer_finish(w, &g_toml, &g_toml_len);
+    } else {
+        teptris_writer_free(w);
+        snprintf(last_error, sizeof last_error, "%s",
+                 teptris_status_string(st));
+        return (int)st;
+    }
+    teptris_writer_free(w);
+    if (st != TEPTRIS_OK) {
+        snprintf(last_error, sizeof last_error, "%s",
+                 teptris_status_string(st));
+    }
+    return (int)st;
+}
+
+
 static int finish_with(void *b,
                        teptris_status (*emit)(const teptris_document *,
                                               char **, size_t *)) {

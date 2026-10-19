@@ -166,17 +166,147 @@ export function initApi(mod) {
     return out;
   }
 
+  // Fused dumps: the object tree is encoded ONCE into a writer
+  // op-stream (Uint8Array), then a single crossing builds the TOML
+  // text - no per-value builder calls, no DOM, no second walk.
   function dump(obj) {
-    const b = buildTree(obj);
-    try {
-      const st = mod._teptris_wasm_builder_finish(b);
-      if (st !== 0) {
-        throw new Error(`dump failed (status ${st})`);
-      }
-      return readOut(mod._teptris_wasm_toml());
-    } finally {
-      mod._teptris_wasm_builder_free(b);
+    if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
+      throw new TypeError("dump expects a table object (TOML roots are tables)");
     }
+    const enc = new TextEncoder();
+    let buf = new Uint8Array(1 << 16);
+    let n = 0;
+    let dv = new DataView(buf.buffer);
+    const ensure = (k) => {
+      if (n + k <= buf.length) return;
+      let cap = buf.length * 2;
+      while (n + k > cap) cap *= 2;
+      const nb = new Uint8Array(cap);
+      nb.set(buf.subarray(0, n));
+      buf = nb;
+      dv = new DataView(buf.buffer);
+    };
+    const byte = (c) => { ensure(1); buf[n++] = c; };
+    const u32 = (v) => {
+      ensure(4);
+      dv.setUint32(n, v, true);
+      n += 4;
+    };
+    const i64 = (v) => {
+      ensure(8);
+      if (v >= -2147483648 && v <= 2147483647) {
+        dv.setInt32(n, v, true);
+        dv.setInt32(n + 4, v < 0 ? -1 : 0, true);
+      } else {
+        dv.setBigInt64(n, BigInt(v), true);
+      }
+      n += 8;
+    };
+    const f64 = (d) => {
+      ensure(8);
+      dv.setFloat64(n, d, true);
+      n += 8;
+    };
+    const wkey = (k) => {
+      ensure(2 + k.length * 3);
+      buf[n++] = 1;
+      const { written } = enc.encodeInto(k, buf.subarray(n + 1));
+      buf[n] = written;
+      n += 1 + written;
+    };
+    const scalar = (k, v) => {
+      if (k === null) { ensure(2); buf[n++] = 1; buf[n++] = 0; }
+      else wkey(k);
+      if (typeof v === "boolean") { byte(v ? 6 : 5); return; }
+      if (typeof v === "number") {
+        if (Number.isInteger(v)) { byte(3); i64(v); }
+        else { byte(4); f64(v); }
+        return;
+      }
+      if (typeof v === "bigint") { byte(3); i64(v); return; }
+      if (typeof v === "string") {
+        if (RFC3339.test(v)) {
+          const dt = parseDateTime(v);
+          wkey(k);
+          ensure(27);
+          buf[n++] = 7;
+          buf[n++] = dt.kind;
+          i64(dt.year);
+          buf[n++] = dt.month; buf[n++] = dt.day; buf[n++] = dt.hour;
+          buf[n++] = dt.minute; buf[n++] = dt.second;
+          u32(dt.nanosecond);
+          i64(dt.offset_seconds);
+          return;
+        }
+        ensure(5 + v.length * 3);
+        buf[n++] = 2;
+        const { written } = enc.encodeInto(v, buf.subarray(n + 4));
+        dv.setUint32(n, written, true);
+        n += 4 + written;
+        return;
+      }
+      throw new Error("null/undefined cannot round-trip through TOML");
+    };
+    const isScalar = (v) =>
+      v !== null && (typeof v !== "object" || Array.isArray(v) === false &&
+        (typeof v === "string" || typeof v === "number" ||
+         typeof v === "boolean" || typeof v === "bigint"));
+    const members = (o, inline) => {
+      const ents = Object.entries(o);
+      for (const [k, v] of ents) {
+        if (isScalar(v)) scalar(k, v);
+      }
+      for (const [k, v] of ents) {
+        if (isScalar(v)) continue;
+        if (v === null || v === undefined) {
+          throw new Error("null/undefined cannot round-trip through TOML");
+        }
+        wkey(k);
+        if (Array.isArray(v)) {
+          const aot = v.length > 0 && !inline && v.every(
+            (x) => x !== null && typeof x === "object" &&
+              !Array.isArray(x));
+          if (aot) {
+            byte(0x0A);
+            for (const el of v) { byte(8); members(el, true); byte(0x0C); }
+            byte(0x0C);
+          } else {
+            byte(0x09);
+            for (const el of v) arrayVal(el);
+            byte(0x0C);
+          }
+        } else {
+          byte(inline ? 0x0B : 0x08);
+          members(v, inline);
+          byte(0x0C);
+        }
+      }
+    };
+    const arrayVal = (el) => {
+      if (isScalar(el)) { scalar(null, el); return; }
+      if (Array.isArray(el)) {
+        byte(0x09);
+        for (const x of el) arrayVal(x);
+        byte(0x0C);
+        return;
+      }
+      if (el === null || el === undefined) {
+        throw new Error("null/undefined cannot round-trip through TOML");
+      }
+      byte(0x0B);
+      members(el, true);
+      byte(0x0C);
+    };
+    members(obj, false);
+    byte(0x00);
+    const ptr = mod._teptris_wasm_alloc(n);
+    mod.HEAPU8.set(buf.subarray(0, n), ptr);
+    const st = mod._teptris_wasm_dump_ops(ptr, n);
+    mod._teptris_wasm_free(ptr);
+    if (st !== 0) {
+      throw new Error(`dump failed (status ${st})`);
+    }
+    return readOut(mod._teptris_wasm_toml());
   }
 
   // Natural JSON (engine 0.3.0): real numbers, booleans, RFC 3339
