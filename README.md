@@ -1,5 +1,9 @@
 # teptris (JavaScript/TypeScript)
 
+**Mission: be the best TOML parser and builder ever made — in C, Ruby,
+Rust, and JS — measured, not claimed.** The bar and the family ledger:
+[BEST-EVER.md](https://github.com/leptris/teptris/blob/main/BEST-EVER.md).
+
 TOML for JavaScript at libteptris speed — the engine compiled to
 WebAssembly (emscripten, ES module), no fallback.
 
