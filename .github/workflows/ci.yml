@@ -46,6 +46,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm test
+      - name: Binding differential vs smol-toml
+        run: node scripts/diff_smol.mjs test/corpus
 
   browser-smoke:
     name: browser smoke (headless chrome)
