@@ -51,6 +51,20 @@ function parseDateTime(str) {
 const RFC3339 =
   /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$|^\d{2}:\d{2}:\d{2}(\.\d+)?$/;
 
+// cheap charset pre-check before the RFC 3339 regex: datetimes start
+// with a digit and only ever contain digits, date/time punctuation
+// and TZ marks - rejects nearly all plain strings without the regex
+const DATETIME_CHARS = /[0-9Tt: .+Zz-]/;
+const utf8 = new TextDecoder("utf-8");
+function maybeRfc3339(v) {
+  const c0 = v.charCodeAt(0);
+  if (!(c0 >= 48 && c0 <= 57)) return false;
+  for (let i = 1; i < v.length; i++) {
+    if (!DATETIME_CHARS.test(v[i])) return false;
+  }
+  return true;
+}
+
 function buildValue(mod, b, key, v, errs) {
   const kp = key == null ? 0 : cstr(mod, key);
   try {
@@ -122,7 +136,9 @@ export function initApi(mod) {
     let value = null, error = null;
     if (st === 0) {
       const jptr = mod._teptris_wasm_json();
-      value = JSON.parse(UTF8ToString(jptr));
+      const jlen = mod._teptris_wasm_json_len();
+      value = JSON.parse(
+        utf8.decode(mod.HEAPU8.subarray(jptr, jptr + jlen)));
       mod._teptris_wasm_free(jptr);
     } else {
       error = {
@@ -225,7 +241,7 @@ export function initApi(mod) {
       }
       if (typeof v === "bigint") { byte(3); i64(v); return; }
       if (typeof v === "string") {
-        if (RFC3339.test(v)) {
+        if (maybeRfc3339(v) && RFC3339.test(v)) {
           const dt = parseDateTime(v);
           wkey(k);
           ensure(27);
@@ -252,11 +268,13 @@ export function initApi(mod) {
         (typeof v === "string" || typeof v === "number" ||
          typeof v === "boolean" || typeof v === "bigint"));
     const members = (o, inline) => {
-      const ents = Object.entries(o);
-      for (const [k, v] of ents) {
+      const keys = Object.keys(o);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i], v = o[k];
         if (isScalar(v)) scalar(k, v);
       }
-      for (const [k, v] of ents) {
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i], v = o[k];
         if (isScalar(v)) continue;
         if (v === null || v === undefined) {
           throw new Error("null/undefined cannot round-trip through TOML");
