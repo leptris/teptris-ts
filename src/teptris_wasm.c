@@ -134,6 +134,77 @@ int teptris_wasm_builder_close(void *b) {
 static char *g_toml;
 static size_t g_toml_len;
 
+/* native-doc API: the retained DOM. loads_doc parses and HOLDS the
+ * engine document in a single slot (a later load replaces and frees
+ * it); dump_doc emits it with the C emitter. The roundtrip
+ * dumpDoc(loadsDoc(s)) runs at C speed - no JS objects materialized.
+ * Single-threaded, single-slot by contract. */
+static teptris_document *g_doc;
+/* the doc's keys/values are VIEWS into its parse input - the input
+ * buffer must live as long as the retained document */
+static char *g_doc_input;
+
+EMSCRIPTEN_KEEPALIVE
+int teptris_wasm_load_doc(const char *data, size_t len) {
+    if (g_doc != NULL) {
+        teptris_document_free(g_doc);
+        g_doc = NULL;
+    }
+    if (g_doc_input != NULL) {
+        free(g_doc_input);
+        g_doc_input = NULL;
+    }
+    /* copy the input FIRST: the doc's keys/values are views into it,
+     * and the caller's buffer is transient */
+    char *input = malloc(len);
+    if (input == NULL) {
+        snprintf(last_error, sizeof last_error, "alloc failed");
+        return (int)TEPTRIS_ERR_ALLOC;
+    }
+    memcpy(input, data, len);
+    teptris_document *doc = NULL;
+    teptris_status st = teptris_parse(input, len, NULL, &doc);
+    if (st != TEPTRIS_OK || doc == NULL) {
+        free(input);
+        if (doc != NULL) {
+            const teptris_error *e = teptris_document_error(doc);
+            snprintf(last_error, sizeof last_error, "%s", e->message);
+            last_error_line = (int)e->line;
+            last_error_column = (int)e->column;
+            teptris_document_free(doc);
+        } else {
+            snprintf(last_error, sizeof last_error, "parse failed");
+        }
+        return (int)st;
+    }
+    g_doc_input = input;
+    g_doc = doc;
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int teptris_wasm_dump_doc(void) {
+    if (g_doc == NULL) {
+        snprintf(last_error, sizeof last_error,
+                 "no retained document (loadsDoc first)");
+        return (int)TEPTRIS_ERR_STATE;
+    }
+    char *buf = NULL;
+    size_t len = 0;
+    teptris_status st = teptris_document_emit(g_doc, &buf, &len);
+    if (st != TEPTRIS_OK) {
+        snprintf(last_error, sizeof last_error, "%s",
+                 teptris_status_string(st));
+        return (int)st;
+    }
+    /* no free(g_toml) here: the JS readOut() frees the pointer it
+     * read (the builder_finish convention) - freeing it here too is a
+     * double free */
+    g_toml = buf;
+    g_toml_len = len;
+    return 0;
+}
+
 /* fused dumps: the JS side encodes one op-stream (writer grammar),
  * this builds TOML in one crossing - no per-value builder calls, no
  * DOM */
