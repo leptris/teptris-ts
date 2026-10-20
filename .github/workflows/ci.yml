@@ -45,6 +45,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
+      - run: npm install --no-audit --no-fund
       - run: npm test
       - name: Binding differential vs smol-toml
         run: node scripts/diff_smol.mjs test/corpus
