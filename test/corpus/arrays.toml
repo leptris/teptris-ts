@@ -1,0 +1,9 @@
+ints = [1, 2, 3]
+nested = [[1, 2], [3, [4, 5]]]
+mixed = ["a", 1, true, 1979-05-27, [6]]
+empty = []
+strs = ["x", "y"]
+multi = [
+  1,
+  2, # comment
+]
