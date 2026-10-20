@@ -1,0 +1,11 @@
+top = "v"
+[a]
+x = 1
+[a.b]
+y = 2
+[a.b.c]
+z = 3
+[dotted.key]
+deep = "v"
+[e]
+list = [1, 2]

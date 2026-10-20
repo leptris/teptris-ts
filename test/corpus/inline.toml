@@ -1,0 +1,7 @@
+it = { a = 1, b = "x", c = { d = 2 } }
+ia = [{ p = 1 }, { p = 2 }]
+ie = {}
+iae = []
+mid = { arr = [1, { q = "z" }] }
+[post]
+name = "after"

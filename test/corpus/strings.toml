@@ -1,0 +1,13 @@
+basic = "I'm a string."
+tab = "a\tb"
+quote = "say \"hi\""
+backslash = "C:\\path"
+unicode = "é ✓"
+ml = """
+Roses are red
+Violets are blue"""
+literal = 'C:\Users\no\escape'
+ll = '''
+raw \n no escape
+'''
+empty = ""
