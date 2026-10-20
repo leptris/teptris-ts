@@ -343,6 +343,44 @@ export function initApi(mod) {
     }
   }
 
+  // native-doc API: the retained document. loadsDoc parses and HOLDS
+  // the engine document in the module (a later loadsDoc replaces it -
+  // single slot); dumpDoc emits it with the C emitter. The roundtrip
+  // dumpDoc(loadsDoc(s)) runs at C speed, no JS objects materialized.
+  let docHeld = false;
+  function loadsDoc(toml) {
+    if (typeof toml !== "string") {
+      throw new TypeError("loadsDoc expects a string");
+    }
+    const ptr = cstr(mod, toml);
+    const st = mod._teptris_wasm_load_doc(ptr, lengthBytesUTF8(toml));
+    freeCstr(mod, ptr);
+    if (st !== 0) {
+      docHeld = false;
+      const e = new Error(
+        `${UTF8ToString(mod._teptris_wasm_last_error())} (line ` +
+        `${mod._teptris_wasm_last_error_line()}, column ` +
+        `${mod._teptris_wasm_last_error_column()})`);
+      e.line = mod._teptris_wasm_last_error_line();
+      e.column = mod._teptris_wasm_last_error_column();
+      throw e;
+    }
+    docHeld = true;
+    return { toString() { return "[teptris doc]"; } };
+  }
+
+  function dumpDoc(doc) {
+    if (!docHeld || doc == null || typeof doc !== "object") {
+      throw new Error("dumpDoc expects the document from loadsDoc " +
+        "(a later loadsDoc replaces it - single slot)");
+    }
+    const st = mod._teptris_wasm_dump_doc();
+    if (st !== 0) {
+      throw new Error(UTF8ToString(mod._teptris_wasm_last_error()));
+    }
+    return readOut(mod._teptris_wasm_toml());
+  }
+
   function engineVersion() {
     return UTF8ToString(mod._teptris_version_string());
   }
@@ -469,7 +507,7 @@ export function initApi(mod) {
     mod._teptris_wasm_plan_free(plan);
   }
 
-  return { loads, dump, dumpJson, planBuild, planWalk, planFree, engineVersion };
+  return { loads, dump, dumpJson, planBuild, planWalk, planFree, loadsDoc, dumpDoc, engineVersion };
 }
 
 // The consumer entry: instantiate the engine once, get the API.
