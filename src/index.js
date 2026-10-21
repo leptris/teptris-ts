@@ -235,8 +235,22 @@ export function initApi(mod) {
       else wkey(k);
       if (typeof v === "boolean") { byte(v ? 6 : 5); return; }
       if (typeof v === "number") {
-        if (Number.isInteger(v)) { byte(3); i64(v); }
-        else { byte(4); f64(v); }
+        if (Number.isInteger(v)) {
+          ensure(9);
+          buf[n++] = 3;
+          if (v >= -2147483648 && v <= 2147483647) {
+            dv.setInt32(n, v, true);
+            dv.setInt32(n + 4, v < 0 ? -1 : 0, true);
+          } else {
+            dv.setBigInt64(n, BigInt(v), true);
+          }
+          n += 8;
+          return;
+        }
+        ensure(9);
+        buf[n++] = 4;
+        dv.setFloat64(n, v, true);
+        n += 8;
         return;
       }
       if (typeof v === "bigint") { byte(3); i64(v); return; }
