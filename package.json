@@ -29,6 +29,7 @@
   "types": "src/index.d.ts",
   "devDependencies": {
     "@iarna/toml": "^2.2.5",
+    "@ltd/j-toml": "^1.38.0",
     "smol-toml": "^1.9.1"
   }
 }
