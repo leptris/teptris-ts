@@ -1,5 +1,7 @@
 # teptris (JavaScript/TypeScript)
 
+[![ci](https://github.com/leptris/teptris-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/leptris/teptris-ts/actions/workflows/ci.yml)
+
 **Mission: be the best TOML parser and builder ever made — in C, Ruby,
 Rust, and JS — measured, not claimed.** The bar and the family ledger:
 [BEST-EVER.md](https://github.com/leptris/teptris/blob/main/BEST-EVER.md).
