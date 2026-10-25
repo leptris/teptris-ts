@@ -28,7 +28,9 @@ function parseDateTime(str) {
     return {
       kind, year: +m[1], month: +m[2], day: +m[3], hour: +m[4],
       minute: +m[5], second: +m[6],
-      nanosecond: m[7] ? Math.floor(+("0." + m[7]) * 1e9) : 0,
+      // integer string padding, not FP: 0.507029 * 1e9 floors to
+      // 507028999 (off by one)
+      nanosecond: m[7] ? +((m[7] + "000000000").slice(0, 9)) : 0,
       offset_seconds: offset,
     };
   }
@@ -42,7 +44,7 @@ function parseDateTime(str) {
   if (m) {
     return { kind: KIND_TIME, year: 0, month: 0, day: 0, hour: +m[1],
              minute: +m[2], second: +m[3],
-             nanosecond: m[4] ? Math.floor(+("0." + m[4]) * 1e9) : 0,
+             nanosecond: m[4] ? +((m[4] + "000000000").slice(0, 9)) : 0,
              offset_seconds: 0 };
   }
   return null;
@@ -53,16 +55,15 @@ const RFC3339 =
 
 // cheap charset pre-check before the RFC 3339 regex: datetimes start
 // with a digit and only ever contain digits, date/time punctuation
-// and TZ marks - rejects nearly all plain strings without the regex
-const DATETIME_CHARS = /[0-9Tt: .+Zz-]/;
+// and TZ marks - rejects nearly all plain strings without the regex.
+// One whole-string regex pass (the per-char loop allocated a
+// single-char string per character).
+const DATETIME_CHARS = /^[0-9Tt: .+Zz-]*$/;
 const utf8 = new TextDecoder("utf-8");
+const utf8enc = new TextEncoder();
 function maybeRfc3339(v) {
   const c0 = v.charCodeAt(0);
-  if (!(c0 >= 48 && c0 <= 57)) return false;
-  for (let i = 1; i < v.length; i++) {
-    if (!DATETIME_CHARS.test(v[i])) return false;
-  }
-  return true;
+  return c0 >= 48 && c0 <= 57 && DATETIME_CHARS.test(v);
 }
 
 function buildValue(mod, b, key, v, errs) {
@@ -177,7 +178,9 @@ export function initApi(mod) {
   }
 
   function readOut(ptr) {
-    const out = UTF8ToString(ptr);
+    // explicit length: the emit buffer is not NUL-terminated for us,
+    // and a full strlen scan over the output is measurable
+    const out = UTF8ToString(ptr, mod._teptris_wasm_toml_len());
     mod._teptris_wasm_free(ptr);
     return out;
   }
@@ -189,7 +192,7 @@ export function initApi(mod) {
     if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
       throw new TypeError("dump expects a table object (TOML roots are tables)");
     }
-    const enc = new TextEncoder();
+
     let buf = new Uint8Array(1 << 16);
     let n = 0;
     let dv = new DataView(buf.buffer);
@@ -226,9 +229,23 @@ export function initApi(mod) {
     const wkey = (k) => {
       ensure(2 + k.length * 3);
       buf[n++] = 1;
-      const { written } = enc.encodeInto(k, buf.subarray(n + 1));
-      buf[n] = written;
-      n += 1 + written;
+      // ASCII fast path: keys are tiny, so TextEncoder.encodeInto's
+      // per-call view allocation costs more than the copy itself;
+      // non-ASCII falls back to encodeInto (overwrites from offset 1)
+      let ascii = true;
+      for (let i = 0; i < k.length; i++) {
+        const c = k.charCodeAt(i);
+        if (c > 127) { ascii = false; break; }
+        buf[n + 1 + i] = c;
+      }
+      if (ascii) {
+        buf[n] = k.length;
+        n += 1 + k.length;
+      } else {
+        const { written } = utf8enc.encodeInto(k, buf.subarray(n + 1));
+        buf[n] = written;
+        n += 1 + written;
+      }
     };
     const scalar = (k, v) => {
       if (k === null) { ensure(2); buf[n++] = 1; buf[n++] = 0; }
@@ -243,7 +260,9 @@ export function initApi(mod) {
       if (typeof v === "string") {
         if (maybeRfc3339(v) && RFC3339.test(v)) {
           const dt = parseDateTime(v);
-          wkey(k);
+          // the key prefix is already written (top of scalar()); the
+          // datetime record is value-only - re-sending the key here
+          // crashed bare array elements (k === null)
           ensure(27);
           buf[n++] = 7;
           buf[n++] = dt.kind;
@@ -256,9 +275,20 @@ export function initApi(mod) {
         }
         ensure(5 + v.length * 3);
         buf[n++] = 2;
-        const { written } = enc.encodeInto(v, buf.subarray(n + 4));
-        dv.setUint32(n, written, true);
-        n += 4 + written;
+        let ascii = true;
+        for (let i = 0; i < v.length; i++) {
+          const c = v.charCodeAt(i);
+          if (c > 127) { ascii = false; break; }
+          buf[n + 4 + i] = c;
+        }
+        if (ascii) {
+          dv.setUint32(n, v.length, true);
+          n += 4 + v.length;
+        } else {
+          const { written } = utf8enc.encodeInto(v, buf.subarray(n + 4));
+          dv.setUint32(n, written, true);
+          n += 4 + written;
+        }
         return;
       }
       throw new Error("null/undefined cannot round-trip through TOML");
