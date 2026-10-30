@@ -80,7 +80,7 @@ function buildValue(mod, b, key, v, errs) {
   const kp = key == null ? 0 : cstr(mod, key);
   try {
     if (v === null || v === undefined) {
-      throw new Error("null/undefined cannot round-trip through TOML");
+      throw new Error("null/undefined cannot round-trip through TOML (nan/inf parse to null in loads() and cannot re-enter)");
     }
     switch (typeof v) {
       case "number":
@@ -320,7 +320,7 @@ export function initApi(mod) {
         }
         return;
       }
-      throw new Error("null/undefined cannot round-trip through TOML");
+      throw new Error("null/undefined cannot round-trip through TOML (nan/inf parse to null in loads() and cannot re-enter)");
     };
     const isScalar = (v) =>
       v !== null && (typeof v !== "object" || Array.isArray(v) === false &&
@@ -336,7 +336,7 @@ export function initApi(mod) {
         const k = keys[i], v = o[k];
         if (isScalar(v)) continue;
         if (v === null || v === undefined) {
-          throw new Error("null/undefined cannot round-trip through TOML");
+          throw new Error("null/undefined cannot round-trip through TOML (nan/inf parse to null in loads() and cannot re-enter)");
         }
         wkey(k);
         if (Array.isArray(v)) {
@@ -368,7 +368,7 @@ export function initApi(mod) {
         return;
       }
       if (el === null || el === undefined) {
-        throw new Error("null/undefined cannot round-trip through TOML");
+        throw new Error("null/undefined cannot round-trip through TOML (nan/inf parse to null in loads() and cannot re-enter)");
       }
       byte(0x0B);
       members(el, true);
