@@ -264,8 +264,9 @@ export function initApi(mod) {
       }
     };
     const scalar = (k, v) => {
-      if (k === null) { ensure(2); buf[n++] = 1; buf[n++] = 0; }
-      else wkey(k);
+      // array ELEMENTS carry no key op (writer grammar v0.3.11): the
+      // old klen-0 marker is now a genuine empty key
+      if (k !== null) wkey(k);
       if (typeof v === "boolean") { byte(v ? 6 : 5); return; }
       if (typeof v === "number") {
         // the integer path only for numbers the int64 op can carry

@@ -181,6 +181,17 @@ test("1e21 stays a float (Number.isInteger(1e21) is true)", () => {
   assert.equal(loads(text).a, 1e21);
 });
 
+test("mixed arrays carry no key markers (grammar v0.3.11)", () => {
+  // the v0.3.10 empty-key change made the old klen-0 array-element
+  // marker a genuine pending empty key; the stale key tripped the
+  // inline-element guard and [1, {c: "x"}] failed ERR_ARG (npm
+  // 0.3.14 shipped it - this is the regression test)
+  const text = dump({ b: [1, { c: "x" }] });
+  assert.equal(text, "b = [1, {c = 'x'}]\n");
+  assert.deepEqual(loads(text), { b: [1, { c: "x" }] });
+  assert.equal(dump({ m: [[1, "a"], [2, "b"]] }), "m = [[1, 'a'], [2, 'b']]\n");
+});
+
 test("-0.0 keeps its sign", () => {
   assert.equal(dump(loads("a = -0.0\n")), "a = -0.0\n");
   assert.equal(dump({ a: -0.0 }), "a = -0.0\n");
