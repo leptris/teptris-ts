@@ -160,3 +160,48 @@ test("planWalk surfaces parse errors with position", () => {
 test("planBuild rejects empty plans", () => {
   assert.throws(() => planBuild([]), TypeError);
 });
+
+// ---- the dump integer-path guards (audit P0: silent int64 wraps) ----
+
+test("i64-max-shaped loads output dumps as a float, not a wrap", () => {
+  // JS numbers past 2^53 cannot carry 9223372036854775807 exactly; the
+  // natural-JSON loads hands back 9223372036854776000. That value sits
+  // past int64 max, so the dump integer path must refuse it and emit a
+  // float instead - it used to WRAP to INT64_MIN silently.
+  const doc = loads("a = 9223372036854775807\n");
+  const text = dump(doc);
+  assert.ok(!text.includes("-9223372036854775808"), text);
+  assert.equal(loads(text).a, 9223372036854776000);
+});
+
+test("1e21 stays a float (Number.isInteger(1e21) is true)", () => {
+  const text = dump(loads("a = 1e21\n"));
+  assert.ok(!text.includes("3875820019684212736"), text);
+  assert.ok(text.includes("1e21"), text);
+  assert.equal(loads(text).a, 1e21);
+});
+
+test("-0.0 keeps its sign", () => {
+  assert.equal(dump(loads("a = -0.0\n")), "a = -0.0\n");
+  assert.equal(dump({ a: -0.0 }), "a = -0.0\n");
+});
+
+test("dumpJson takes the same guards (builder path)", () => {
+  const text = dumpJson(loads("a = 1e21\n"));
+  assert.ok(!text.includes("3875820019684212736"), text);
+  const neg = JSON.parse(dumpJson({ a: -0.0 }));
+  assert.ok(Object.is(neg.a, -0) || neg.a === 0, "no wrap; sign handled");
+});
+
+test("bigints dump exactly inside int64, throw outside", () => {
+  assert.equal(dump({ a: 9007199254740993n }), "a = 9007199254740993\n");
+  assert.equal(dump({ a: -9223372036854775808n }), "a = -9223372036854775808\n");
+  assert.throws(() => dump({ a: 9223372036854775808n }), /int64 range/);
+  assert.throws(() => dump({ a: -9223372036854775809n }), /int64 range/);
+});
+
+test("2^63-1-shaped numbers take the float path (the literal rounds)", () => {
+  // 9223372036854775807 is not representable; the JS literal IS 2^63,
+  // which sits outside the exclusive bound - float, no wrap
+  assert.equal(dump({ a: 9223372036854775807 }), "a = 9.223372036854776e18\n");
+});

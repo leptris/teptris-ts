@@ -53,6 +53,16 @@ function parseDateTime(str) {
 const RFC3339 =
   /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$|^\d{2}:\d{2}:\d{2}(\.\d+)?$/;
 
+// int64 bounds for the dump integer path: Number.isInteger is true for
+// values like 1e21, and the op-stream's int64 encode wraps silently
+// past these bounds. The bound is 2^63 EXCLUSIVE (exactly representable
+// as a number; 2^63-1 is not - its literal rounds up to 2^63).
+// BigInt(number) of an integral in-range f64 is exact, so anything
+// between 2^53 and 2^63 is still lossless.
+const I64_BOUND = 9223372036854775808; /* 2 ** 63 */
+const I64_MIN_BIG = -9223372036854775808n;
+const I64_MAX_BIG = 9223372036854775807n;
+
 // cheap charset pre-check before the RFC 3339 regex: datetimes start
 // with a digit and only ever contain digits, date/time punctuation
 // and TZ marks - rejects nearly all plain strings without the regex.
@@ -74,7 +84,13 @@ function buildValue(mod, b, key, v, errs) {
     }
     switch (typeof v) {
       case "number":
-        if (Number.isInteger(v)) {
+        // same int64-exactness guard as the op-stream path: put_integer
+        // truncates BigInts past the int64 bounds, and -0.0 keeps its
+        // sign only as a float
+        if (Object.is(v, -0)) {
+          mod._teptris_wasm_builder_put_float(b, kp, v);
+        } else if (Number.isInteger(v) &&
+                   v >= -I64_BOUND && v < I64_BOUND) {
           mod._teptris_wasm_builder_put_integer(b, kp, BigInt(v));
         } else {
           mod._teptris_wasm_builder_put_float(b, kp, v);
@@ -252,11 +268,24 @@ export function initApi(mod) {
       else wkey(k);
       if (typeof v === "boolean") { byte(v ? 6 : 5); return; }
       if (typeof v === "number") {
-        if (Number.isInteger(v)) { byte(3); i64(v); }
-        else { byte(4); f64(v); }
+        // the integer path only for numbers the int64 op can carry
+        // EXACTLY: Number.isInteger alone is true for 1e21 and for
+        // loads-rounded values past i64max, and setBigInt64 silently
+        // WRAPS out-of-range values (9223372036854775807 dumped as
+        // INT64_MIN); -0.0 must keep its sign, so it goes to the
+        // float path too
+        if (Object.is(v, -0)) { byte(4); f64(v); return; }
+        if (Number.isInteger(v) &&
+            v >= -I64_BOUND && v < I64_BOUND) { byte(3); i64(v); return; }
+        byte(4); f64(v);
         return;
       }
-      if (typeof v === "bigint") { byte(3); i64(v); return; }
+      if (typeof v === "bigint") {
+        if (v < I64_MIN_BIG || v > I64_MAX_BIG) {
+          throw new Error(`bigint out of int64 range: ${v}`);
+        }
+        byte(3); i64(v); return;
+      }
       if (typeof v === "string") {
         if (maybeRfc3339(v) && RFC3339.test(v)) {
           const dt = parseDateTime(v);

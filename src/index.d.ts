@@ -32,7 +32,13 @@ export interface TeptrisError extends Error {
 export interface TeptrisApi {
   /** Parse TOML into a JS object (natural-JSON view: real numbers,
    *  booleans, RFC 3339 datetime strings, non-finite floats as
-   *  null). Throws TeptrisError on invalid input. */
+   *  null). Throws TeptrisError on invalid input.
+   *
+   *  Precision floor: JS numbers lose precision past 2^53, so
+   *  integer literals beyond that round (9223372036854775807 reads
+   *  back as 9223372036854776000). dump() never wraps: values past
+   *  the int64 bounds emit as floats, and bigints outside int64
+   *  throw. */
   loads(toml: string): TomlTable;
 
   /** Serialize a table to canonical TOML via the engine builder.
