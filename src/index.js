@@ -327,7 +327,14 @@ export function initApi(mod) {
       v !== null && (typeof v !== "object" || Array.isArray(v) === false &&
         (typeof v === "string" || typeof v === "number" ||
          typeof v === "boolean" || typeof v === "bigint"));
+    let depth = 0;
     const members = (o, inline) => {
+      // name the engine's 512 ceiling: without this the JS stack
+      // RangeErrors somewhere host-opaque (ruby's binding names it)
+      if (++depth > 512) {
+        throw new Error("nesting too deep (> 512)");
+      }
+      try {
       const keys = Object.keys(o);
       for (let i = 0; i < keys.length; i++) {
         const k = keys[i], v = o[k];
@@ -359,13 +366,17 @@ export function initApi(mod) {
           byte(0x0C);
         }
       }
+      } finally { depth--; }
     };
     const arrayVal = (el) => {
       if (isScalar(el)) { scalar(null, el); return; }
       if (Array.isArray(el)) {
+        if (++depth > 512) throw new Error("nesting too deep (> 512)");
+        try {
         byte(0x09);
         for (const x of el) arrayVal(x);
         byte(0x0C);
+        } finally { depth--; }
         return;
       }
       if (el === null || el === undefined) {

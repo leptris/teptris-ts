@@ -38,7 +38,14 @@ export interface TeptrisApi {
    *  integer literals beyond that round (9223372036854775807 reads
    *  back as 9223372036854776000). dump() never wraps: values past
    *  the int64 bounds emit as floats, and bigints outside int64
-   *  throw. */
+   *  throw.
+   *
+   *  Type floor: JSON numbers carry no int/float distinction, so an
+   *  integral-valued float (-776571136.0) loads as a plain number and
+   *  dump() re-emits it as an integer - the .0-ness is unrecoverable
+   *  (py/ruby/rs keep it; their loads carry typed values). Nesting
+   *  past the engine's 512 ceiling dumps with a named
+   *  'nesting too deep' error. */
   loads(toml: string): TomlTable;
 
   /** Serialize a table to canonical TOML via the engine builder.
