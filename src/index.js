@@ -578,7 +578,45 @@ export function initApi(mod) {
     mod._teptris_wasm_plan_free(plan);
   }
 
-  return { loads, dump, dumpJson, planBuild, planWalk, planFree, loadsDoc, dumpDoc, engineVersion };
+  // Format-preserving edit: rewrite exactly the value bytes of one
+  // key = value line; every other byte of the source survives.
+  // Multiline strings and inline collections splice too
+  // (parse-verified); the engine rejects an absent key or a malformed
+  // span/replacement with a thrown Error.
+  function edit(source, keyPath, replacement) {
+    for (const v of [source, keyPath, replacement]) {
+      if (typeof v !== "string") {
+        throw new TypeError("edit expects three strings");
+      }
+    }
+    const sp = cstr(mod, source);
+    const kp = cstr(mod, keyPath);
+    const rp = cstr(mod, replacement);
+    let out = null, error = null;
+    const st = mod._teptris_wasm_edit(sp, lengthBytesUTF8(source), kp, rp);
+    if (st === 0) {
+      const optr = mod._teptris_wasm_json();
+      const olen = mod._teptris_wasm_json_len();
+      out = utf8.decode(mod.HEAPU8.subarray(optr, optr + olen));
+      mod._teptris_wasm_free(optr);
+    } else {
+      error = {
+        message: UTF8ToString(mod._teptris_wasm_last_error()),
+        status: st,
+      };
+    }
+    freeCstr(mod, sp);
+    freeCstr(mod, kp);
+    freeCstr(mod, rp);
+    if (error) {
+      const e = new Error(error.message);
+      e.status = error.status;
+      throw e;
+    }
+    return out;
+  }
+
+  return { loads, dump, dumpJson, planBuild, planWalk, planFree, loadsDoc, dumpDoc, engineVersion, edit };
 }
 
 // The consumer entry: instantiate the engine once, get the API.

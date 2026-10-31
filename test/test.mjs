@@ -235,3 +235,28 @@ test("2^63-1-shaped numbers take the float path (the literal rounds)", () => {
   // which sits outside the exclusive bound - float, no wrap
   assert.equal(dump({ a: 9223372036854775807 }), "a = 9.223372036854776e18\n");
 });
+
+test("edit rewrites exactly the value bytes", async () => {
+  const { edit } = await init();
+  const src = "# c\n[serve]\nport = 8080  # keep\n";
+  assert.equal(
+    edit(src, "serve.port", "9090"),
+    "# c\n[serve]\nport = 9090  # keep\n");
+});
+
+test("edit splices multiline and inline targets, preserves CRLF", async () => {
+  const { edit } = await init();
+  assert.equal(
+    edit("m = \"\"\"\nline\n\"\"\"\nz = 1\n", "m", "\"n\""),
+    "m = \"n\"\nz = 1\n");
+  assert.equal(edit("t = {a = 1}\n", "t", "{a = 2}"), "t = {a = 2}\n");
+  assert.equal(
+    edit("# c\r\nport = 8080\r\n", "port", "9090"),
+    "# c\r\nport = 9090\r\n");
+});
+
+test("edit throws on a missing key and a malformed replacement", async () => {
+  const { edit } = await init();
+  assert.throws(() => edit("a = 1\n", "b", "2"), /edit failed/);
+  assert.throws(() => edit("a = 1\n", "a", "@@@"), /edit failed|parse failed/);
+});

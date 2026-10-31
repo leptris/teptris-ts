@@ -683,3 +683,23 @@ int teptris_wasm_plan_walk(void *plan, const char *data, size_t len) {
     teptris_document_free(doc);
     return rc;
 }
+
+EMSCRIPTEN_KEEPALIVE
+int teptris_wasm_edit(const char *src, size_t len, const char *keypath,
+                      const char *replacement)
+{
+    char *buf = NULL;
+    size_t out_len = 0;
+    teptris_status st = teptris_edit_scalar(src, len, keypath, replacement,
+                                            &buf, &out_len);
+    if (st != TEPTRIS_OK || buf == NULL) {
+        snprintf(last_error, sizeof last_error, "edit failed (status %d)",
+                 (int)st);
+        last_error_line = 0;
+        last_error_column = 0;
+        return (int)st;
+    }
+    g_json = buf;
+    g_json_len = out_len;
+    return (int)TEPTRIS_OK;
+}
