@@ -181,6 +181,25 @@ test("1e21 stays a float (Number.isInteger(1e21) is true)", () => {
   assert.equal(loads(text).a, 1e21);
 });
 
+test("nesting past 512 dumps with the named depth error", () => {
+  let deep = { v: 1 };
+  for (let i = 0; i < 5000; i++) deep = { n: deep };
+  assert.throws(() => dump(deep), /nesting too deep/);
+  let deepArr = { v: 1 };
+  for (let i = 0; i < 600; i++) deepArr = [deepArr];
+  assert.throws(() => dump({ a: deepArr }), /nesting too deep/);
+});
+
+test("integral-valued floats re-enter as integers (documented floor)", () => {
+  // JSON numbers carry no int/float distinction: the engine's float
+  // -776571136.0 loads as a plain JS number and dump's integer path
+  // re-emits it without the .0 (py/ruby/rs keep the type). Pinned as
+  // the documented loads floor - NOT a wrap, the value is exact.
+  const text = dump(loads("a = -776571136.0\n"));
+  assert.equal(text, "a = -776571136\n");
+  assert.equal(loads(text).a, -776571136);
+});
+
 test("mixed arrays carry no key markers (grammar v0.3.11)", () => {
   // the v0.3.10 empty-key change made the old klen-0 array-element
   // marker a genuine pending empty key; the stale key tripped the
