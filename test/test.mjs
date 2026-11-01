@@ -274,3 +274,17 @@ test("AoT-element nested tables promote to sections (engine-canonical)", async (
   const doc = { t: [{ x: 1, y: { z: 2 } }] };
   assert.deepEqual(loads(dump(doc)), doc);
 });
+
+test("dump accepts Date values (the JS ecosystem datetime shape)", async () => {
+  const { dump, dumpJson, loads } = await init();
+  assert.equal(dump({ d: new Date("2026-11-02T10:00:00Z") }),
+    "d = 2026-11-02T10:00:00Z\n");
+  assert.equal(dump({ ds: [new Date("2026-11-02T10:00:00Z")] }),
+    "ds = [2026-11-02T10:00:00Z]\n");
+  const nested = { o: { d: new Date("2026-11-02T10:00:00Z") } };
+  assert.equal(dump(nested), "[o]\nd = 2026-11-02T10:00:00Z\n");
+  assert.equal(dumpJson({ d: new Date("2026-11-02T10:00:00Z") }),
+    '{"d":"2026-11-02T10:00:00Z"}');
+  // a Date was previously mis-typed as a table (an opaque engine error)
+  assert.deepEqual(loads(dump(nested)), { o: { d: "2026-11-02T10:00:00Z" } });
+});
