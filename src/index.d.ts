@@ -61,6 +61,16 @@ export interface TeptrisApi {
   /** The libteptris engine version inside this build. */
   engineVersion(): string;
 
+  /** Format-preserving edit: rewrite exactly the value bytes of one
+   *  key = value line; every other byte of the source survives
+   *  (comments, blank lines, formatting, CRLF endings). keyPath may
+   *  carry a [table] prefix ("t.x" edits x inside [t]); a dotted key
+   *  line may continue the open section. replacement is the value's
+   *  TEXT, validated by the engine; multiline strings and inline
+   *  collections splice (parse-verified). Throws Error on an absent
+   *  key or a malformed span/replacement. */
+  edit(source: string, keyPath: string, replacement: string): string;
+
   /** Compile a descriptor plan (once) — materialize only the planned
    *  keys of any document via planWalk. Rows: a string name is a
    *  scalar; kind "collection" walks an array; kind "raw" takes the
