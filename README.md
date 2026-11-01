@@ -16,6 +16,7 @@ const teptris = await init();
 teptris.loads('a = 1');               // → { a: 1 }
 teptris.dump(obj);                    // → canonical TOML string
 teptris.dumpJson(obj);                // → natural JSON string
+teptris.edit(src, "serve.port", "9090"); // → the file with ONE value rewritten
 teptris.engineVersion();              // → the libteptris inside
 ```
 
