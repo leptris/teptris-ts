@@ -352,8 +352,13 @@ export function initApi(mod) {
             (x) => x !== null && typeof x === "object" &&
               !Array.isArray(x));
           if (aot) {
+            // element bodies are EXPLICIT (the element opens with the
+            // section op): nested tables promote to [path.sub]
+            // sections, matching the engine's canonical emitter - a
+            // true inline context (mixed-array elements) still passes
+            // true via arrayVal
             byte(0x0A);
-            for (const el of v) { byte(8); members(el, true); byte(0x0C); }
+            for (const el of v) { byte(8); members(el, false); byte(0x0C); }
             byte(0x0C);
           } else {
             byte(0x09);

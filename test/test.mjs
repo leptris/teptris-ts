@@ -260,3 +260,17 @@ test("edit throws on a missing key and a malformed replacement", async () => {
   assert.throws(() => edit("a = 1\n", "b", "2"), /edit failed/);
   assert.throws(() => edit("a = 1\n", "a", "@@@"), /edit failed|parse failed/);
 });
+
+test("AoT-element nested tables promote to sections (engine-canonical)", async () => {
+  const { dump } = await init();
+  assert.equal(dump({ t: [{ x: 1, y: { z: 2 } }] }), "[[t]]\nx = 1\n[t.y]\nz = 2\n");
+  assert.equal(
+    dump({ t: [{ x: 1, subs: [{ n: "a" }] }] }),
+    "[[t]]\nx = 1\n[[t.subs]]\nn = 'a'\n");
+  // a genuinely inline context (mixed array) keeps inline tables
+  assert.equal(dump({ arr: [1, { a: 1 }] }), "arr = [1, {a = 1}]\n");
+  // round-trip: the promoted sections parse back to the same tree
+  const { loads } = await init();
+  const doc = { t: [{ x: 1, y: { z: 2 } }] };
+  assert.deepEqual(loads(dump(doc)), doc);
+});
