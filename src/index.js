@@ -3,6 +3,19 @@
 
 const KIND_OFFSET = 4, KIND_LOCAL_DT = 5, KIND_DATE = 6, KIND_TIME = 7;
 
+// Date instances are the JS ecosystem's datetime shape (smol-toml
+// hands them back) - they re-enter as the engine's datetime op. The
+// fields come straight off the Date (toISOString + the parse regex
+// per value measured as the datetime-heavy hot cost); Date carries
+// millisecond precision, so nanoseconds = ms * 1e6.
+const dateToDt = (d) => ({
+  kind: KIND_OFFSET, /* toISOString always yields Z */
+  year: d.getUTCFullYear(), month: d.getUTCMonth() + 1,
+  day: d.getUTCDate(), hour: d.getUTCHours(),
+  minute: d.getUTCMinutes(), second: d.getUTCSeconds(),
+  nanosecond: d.getUTCMilliseconds() * 1e6, offset_seconds: 0,
+});
+
 function cstr(mod, s) {
   const bytes = mod.lengthBytesUTF8(s) + 1;
   const ptr = mod._teptris_wasm_alloc(bytes);
@@ -130,6 +143,15 @@ function buildValue(mod, b, key, v, errs) {
         return;
       default:
         break;
+    }
+    if (v instanceof Date) {
+      // the JS ecosystem's datetime shape re-enters as the engine's
+      // datetime op (same mapping as the RFC 3339 string form)
+      const dt = dateToDt(v);
+      mod._teptris_wasm_builder_put_datetime(
+        b, kp, dt.kind, dt.year, dt.month, dt.day, dt.hour,
+        dt.minute, dt.second, dt.nanosecond, dt.offset_seconds);
+      return;
     }
     if (Array.isArray(v)) {
       mod._teptris_wasm_builder_open_array(b, kp);
@@ -278,9 +300,73 @@ export function initApi(mod) {
         n += 1 + written;
       }
     };
+    // the datetime record is value-only (the key op precedes it)
+    const writeDatetime = (k, dt) => {
+      if (k !== null) wkey(k);
+      ensure(27);
+      buf[n++] = 7;
+      buf[n++] = dt.kind;
+      i64(dt.year);
+      buf[n++] = dt.month; buf[n++] = dt.day; buf[n++] = dt.hour;
+      buf[n++] = dt.minute; buf[n++] = dt.second;
+      u32(dt.nanosecond);
+      i64(dt.offset_seconds);
+    };
     const scalar = (k, v) => {
       // array ELEMENTS carry no key op (writer grammar v0.3.11): the
       // old klen-0 marker is now a genuine empty key
+      if (v instanceof Date) {
+        writeDatetime(k, dateToDt(v));
+        return;
+      }
+      // HOT PATH: keyed int/bool scalars (the mega-flat shapes are
+      // exactly this) - ONE growth check for key + value together,
+      // wkey inlined, direct DataView writes. The profiled dump cost
+      // was 91% JS walk: per-byte closure calls dominated.
+      if (k !== null && typeof v === "number" && !Object.is(v, -0) &&
+          Number.isInteger(v) && v >= -I64_BOUND && v < I64_BOUND) {
+        ensure(4 + k.length * 3 + 8);
+        buf[n++] = 1; /* the KEY op */
+        let ascii = true;
+        for (let i = 0; i < k.length; i++) {
+          const c = k.charCodeAt(i);
+          if (c > 127) { ascii = false; break; }
+          buf[n + 1 + i] = c;
+        }
+        if (ascii) {
+          buf[n] = k.length; n += 1 + k.length;
+        } else {
+          const { written } = utf8enc.encodeInto(k, buf.subarray(n + 1));
+          buf[n] = written; n += 1 + written;
+        }
+        buf[n++] = 3;
+        if (v >= -2147483648 && v <= 2147483647) {
+          dv.setInt32(n, v, true);
+          dv.setInt32(n + 4, v < 0 ? -1 : 0, true);
+        } else {
+          dv.setBigInt64(n, BigInt(v), true);
+        }
+        n += 8;
+        return;
+      }
+      if (k !== null && typeof v === "boolean") {
+        ensure(3 + k.length * 3 + 1);
+        buf[n++] = 1; /* the KEY op */
+        let ascii = true;
+        for (let i = 0; i < k.length; i++) {
+          const c = k.charCodeAt(i);
+          if (c > 127) { ascii = false; break; }
+          buf[n + 1 + i] = c;
+        }
+        if (ascii) {
+          buf[n] = k.length; n += 1 + k.length;
+        } else {
+          const { written } = utf8enc.encodeInto(k, buf.subarray(n + 1));
+          buf[n] = written; n += 1 + written;
+        }
+        buf[n++] = v ? 6 : 5;
+        return;
+      }
       if (k !== null) wkey(k);
       if (typeof v === "boolean") { byte(v ? 6 : 5); return; }
       if (typeof v === "number") {
@@ -304,18 +390,7 @@ export function initApi(mod) {
       }
       if (typeof v === "string") {
         if (maybeRfc3339(v) && RFC3339.test(v)) {
-          const dt = parseDateTime(v);
-          // the key prefix is already written (top of scalar()); the
-          // datetime record is value-only - re-sending the key here
-          // crashed bare array elements (k === null)
-          ensure(27);
-          buf[n++] = 7;
-          buf[n++] = dt.kind;
-          i64(dt.year);
-          buf[n++] = dt.month; buf[n++] = dt.day; buf[n++] = dt.hour;
-          buf[n++] = dt.minute; buf[n++] = dt.second;
-          u32(dt.nanosecond);
-          i64(dt.offset_seconds);
+          writeDatetime(null, parseDateTime(v));
           return;
         }
         ensure(5 + v.length * 3);
@@ -341,7 +416,8 @@ export function initApi(mod) {
     const isScalar = (v) =>
       v !== null && (typeof v !== "object" || Array.isArray(v) === false &&
         (typeof v === "string" || typeof v === "number" ||
-         typeof v === "boolean" || typeof v === "bigint"));
+         typeof v === "boolean" || typeof v === "bigint")) ||
+      v instanceof Date;
     let depth = 0;
     const members = (o, inline) => {
       // name the engine's 512 ceiling: without this the JS stack
@@ -365,7 +441,7 @@ export function initApi(mod) {
         if (Array.isArray(v)) {
           const aot = v.length > 0 && !inline && v.every(
             (x) => x !== null && typeof x === "object" &&
-              !Array.isArray(x));
+              !Array.isArray(x) && !(x instanceof Date));
           if (aot) {
             // element bodies are EXPLICIT (the element opens with the
             // section op): nested tables promote to [path.sub]
