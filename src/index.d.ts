@@ -61,6 +61,18 @@ export interface TeptrisApi {
   /** The libteptris engine version inside this build. */
   engineVersion(): string;
 
+  /** Parse TOML into a retained engine document (no host objects):
+   *  the LOSSLESS round-trip surface. JS numbers cannot carry TOML's
+   *  int/float distinction (loads' documented floor) - doc handles
+   *  can: dumpDoc(loadsDoc(s)) re-emits the parsed tree exactly, at
+   *  C speed with nothing materialized in JS. Single slot: a later
+   *  loadsDoc replaces the held document. */
+  loadsDoc(toml: string): TeptrisDoc;
+
+  /** Emit a loadsDoc() document back to canonical TOML — the
+   *  lossless half of the doc round-trip. */
+  dumpDoc(doc: TeptrisDoc): string;
+
   /** Format-preserving edit: rewrite exactly the value bytes of one
    *  key = value line; every other byte of the source survives
    *  (comments, blank lines, formatting, CRLF endings). keyPath may
@@ -84,6 +96,13 @@ export interface TeptrisApi {
 
   /** Release a compiled plan. */
   planFree(plan: number): void;
+}
+
+/** An opaque retained-document handle from {@link TeptrisApi.loadsDoc}
+ *  (single slot: a later loadsDoc replaces the held document). */
+export interface TeptrisDoc {
+  /** Renders "[teptris doc]". */
+  toString(): string;
 }
 
 /** One planned key of a {@link PlanRowSpec} tree. */
