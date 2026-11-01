@@ -10,6 +10,21 @@ function cstr(mod, s) {
   return ptr;
 }
 
+// The len-bounded fast path: TextEncoder.encodeInto writes UTF-8
+// STRAIGHT into the wasm heap with the native encoder, replacing
+// emscripten's two JS-loop passes (lengthBytesUTF8 + stringToUTF8) -
+// the measured biggest JS-side cost of the loads crossing. Only for
+// entry points whose C side takes an explicit length (no NUL needed);
+// NUL-terminated destinations keep cstr.
+const utf8Encoder = new TextEncoder();
+
+function cstrLen(mod, s) {
+  const cap = s.length * 3 + 4; /* UTF-8 worst case: 3 bytes/unit */
+  const ptr = mod._teptris_wasm_alloc(cap);
+  const { written } = utf8Encoder.encodeInto(s, mod.HEAPU8.subarray(ptr, ptr + cap));
+  return { ptr, len: written };
+}
+
 function freeCstr(mod, ptr) { mod._teptris_wasm_free(ptr); }
 
 // RFC 3339-ish (the four TOML shapes) back into builder fields
@@ -148,8 +163,8 @@ export function initApi(mod) {
     if (typeof toml !== "string") {
       throw new TypeError("loads expects a string");
     }
-    const ptr = cstr(mod, toml);
-    const st = mod._teptris_wasm_load(ptr, lengthBytesUTF8(toml));
+    const { ptr, len } = cstrLen(mod, toml);
+    const st = mod._teptris_wasm_load(ptr, len);
     let value = null, error = null;
     if (st === 0) {
       const jptr = mod._teptris_wasm_json();
@@ -428,8 +443,8 @@ export function initApi(mod) {
     if (typeof toml !== "string") {
       throw new TypeError("loadsDoc expects a string");
     }
-    const ptr = cstr(mod, toml);
-    const st = mod._teptris_wasm_load_doc(ptr, lengthBytesUTF8(toml));
+    const { ptr, len } = cstrLen(mod, toml);
+    const st = mod._teptris_wasm_load_doc(ptr, len);
     freeCstr(mod, ptr);
     if (st !== 0) {
       docHeld = false;
@@ -567,8 +582,8 @@ export function initApi(mod) {
     if (typeof toml !== "string") {
       throw new TypeError("planWalk expects a TOML string");
     }
-    const p = cstr(mod, toml);
-    const st = mod._teptris_wasm_plan_walk(plan, p, lengthBytesUTF8(toml));
+    const { ptr: p, len: plen } = cstrLen(mod, toml);
+    const st = mod._teptris_wasm_plan_walk(plan, p, plen);
     freeCstr(mod, p);
     if (st !== 0) {
       throw planError();
@@ -594,11 +609,11 @@ export function initApi(mod) {
         throw new TypeError("edit expects three strings");
       }
     }
-    const sp = cstr(mod, source);
+    const { ptr: sp, len: slen } = cstrLen(mod, source);
     const kp = cstr(mod, keyPath);
     const rp = cstr(mod, replacement);
     let out = null, error = null;
-    const st = mod._teptris_wasm_edit(sp, lengthBytesUTF8(source), kp, rp);
+    const st = mod._teptris_wasm_edit(sp, slen, kp, rp);
     if (st === 0) {
       const optr = mod._teptris_wasm_json();
       const olen = mod._teptris_wasm_json_len();
