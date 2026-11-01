@@ -1,5 +1,10 @@
 // JS tier: teptris (wasm) vs the JS ecosystem's TOML parsers over the
-// engine bench corpus — the family's last unmeasured tier. Comparators:
+// engine bench corpus.
+// Loads standing (2026-11-01, M-series host, smol-toml current at
+// bench time, best-of-40 x best-of-3-runs, after the encodeInto fast
+// path — TextEncoder.encodeInto straight into the wasm heap replaces
+// emscripten's two JS-loop passes, the profiled biggest JS-side cost
+// of the loads crossing): teptris 9/9, 1.21-4.26x smol. Comparators:
 //   @iarna/toml  — the long-standing standard parser
 //   smol-toml    — the modern fast one
 // Dumps: dump (TOML) vs each comparator's stringify; dumpJson vs
