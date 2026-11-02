@@ -17,6 +17,8 @@ teptris.loads('a = 1');               // → { a: 1 }
 teptris.dump(obj);                    // → canonical TOML string
 teptris.dumpJson(obj);                // → natural JSON string
 teptris.edit(src, "serve.port", "9090"); // → the file with ONE value rewritten
+const schema = teptris.compileSchema('{"properties":{"port":{"type":"integer"}}}');
+schema.validate('port = "x"');        // → [{"path","schemaPath","message"}]; [] = valid
 teptris.engineVersion();              // → the libteptris inside
 ```
 

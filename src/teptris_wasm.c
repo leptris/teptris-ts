@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "teptris/schema.h"
 #include "teptris/teptris.h"
 
 static char *g_json;
@@ -703,3 +704,56 @@ int teptris_wasm_edit(const char *src, size_t len, const char *keypath,
     g_json_len = out_len;
     return (int)TEPTRIS_OK;
 }
+
+/* ---- schema surface (teptris/schema.h) ----------------------------
+ * Compile once, validate many: the handle crosses as an opaque
+ * pointer like the builder; the validation answer rides the same
+ * g_json channel as every other string handback. Compile failures put
+ * the engine's diag JSON ("{"error": ...}") into last_error. */
+
+EMSCRIPTEN_KEEPALIVE
+void *teptris_wasm_schema_compile(const char *json, size_t len)
+{
+    teptris_schema *sch = NULL;
+    char *diag = NULL;
+    size_t diag_len = 0;
+    teptris_status st =
+        teptris_schema_compile(json, len, &sch, &diag, &diag_len);
+    if (st != TEPTRIS_OK || sch == NULL) {
+        snprintf(last_error, sizeof last_error, "%s",
+                 diag != NULL ? diag : "invalid schema");
+        last_error_line = 0;
+        last_error_column = 0;
+        teptris_diag_free(diag);
+        if (sch != NULL) {
+            teptris_schema_free(sch);
+        }
+        return NULL;
+    }
+    return sch;
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char *teptris_wasm_schema_diag(void) { return last_error; }
+
+EMSCRIPTEN_KEEPALIVE
+int teptris_wasm_schema_validate(void *sch, const char *toml, size_t len)
+{
+    char *buf = NULL;
+    size_t out_len = 0;
+    teptris_status st = teptris_schema_validate(sch, toml, len, &buf,
+                                                &out_len);
+    if (st != TEPTRIS_OK) {
+        snprintf(last_error, sizeof last_error,
+                 "validation failed (status %d)", (int)st);
+        last_error_line = 0;
+        last_error_column = 0;
+        return (int)st;
+    }
+    g_json = buf;
+    g_json_len = out_len;
+    return (int)TEPTRIS_OK;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void teptris_wasm_schema_free(void *sch) { teptris_schema_free(sch); }

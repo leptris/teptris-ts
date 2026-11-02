@@ -724,7 +724,68 @@ export function initApi(mod) {
     return out;
   }
 
-  return { loads, dump, dumpJson, planBuild, planWalk, planFree, loadsDoc, dumpDoc, engineVersion, edit };
+  // The schema surface: compile-once/validate-many over the engine's
+  // JSON Schema 2020-12 practical subset. Compile failures carry the
+  // engine's diag JSON (unsupported constructs are named, never
+  // silently ignored); validation returns the engine's
+  // {"path","schemaPath","message"} array (empty = valid), and a
+  // document that does not parse throws with the engine status.
+  class Schema {
+    constructor(handle) {
+      this._handle = handle;
+    }
+
+    validate(toml) {
+      if (typeof toml !== "string") {
+        throw new TypeError("validate expects a TOML string");
+      }
+      const { ptr, len } = cstrLen(mod, toml);
+      const st = mod._teptris_wasm_schema_validate(this._handle, ptr, len);
+      freeCstr(mod, ptr);
+      if (st !== 0) {
+        const e = new Error(
+          UTF8ToString(mod._teptris_wasm_last_error()));
+        e.status = st;
+        throw e;
+      }
+      const jptr = mod._teptris_wasm_json();
+      const jlen = mod._teptris_wasm_json_len();
+      const violations = JSON.parse(
+        utf8.decode(mod.HEAPU8.subarray(jptr, jptr + jlen)));
+      mod._teptris_wasm_free(jptr);
+      return violations;
+    }
+
+    isValid(toml) {
+      try {
+        return this.validate(toml).length === 0;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    free() {
+      if (this._handle) {
+        mod._teptris_wasm_schema_free(this._handle);
+        this._handle = null;
+      }
+    }
+  }
+
+  function compileSchema(schemaJson) {
+    if (typeof schemaJson !== "string") {
+      throw new TypeError("compileSchema expects a JSON string");
+    }
+    const { ptr, len } = cstrLen(mod, schemaJson);
+    const handle = mod._teptris_wasm_schema_compile(ptr, len);
+    freeCstr(mod, ptr);
+    if (!handle) {
+      throw new Error(UTF8ToString(mod._teptris_wasm_schema_diag()));
+    }
+    return new Schema(handle);
+  }
+
+  return { loads, dump, dumpJson, planBuild, planWalk, planFree, loadsDoc, dumpDoc, engineVersion, edit, compileSchema, Schema };
 }
 
 // The consumer entry: instantiate the engine once, get the API.
