@@ -427,13 +427,25 @@ export function initApi(mod) {
       }
       try {
       const keys = Object.keys(o);
+      // ONE pass: scalars emit immediately (canonical order - scalar
+      // ops precede table ops per table); container keys collect and
+      // walk after. The inlined type test replaces the per-key
+      // isScalar closure call x2 the two-pass structure paid.
+      const containers = [];
       for (let i = 0; i < keys.length; i++) {
         const k = keys[i], v = o[k];
-        if (isScalar(v)) scalar(k, v);
+        const tv = typeof v;
+        if (v instanceof Date ||
+            (v !== null && (tv === "string" || tv === "number" ||
+                            tv === "boolean" || tv === "bigint"))) {
+          scalar(k, v);
+        } else {
+          containers.push(k);
+        }
       }
-      for (let i = 0; i < keys.length; i++) {
-        const k = keys[i], v = o[k];
-        if (isScalar(v)) continue;
+      for (let i = 0; i < containers.length; i++) {
+        const k = containers[i];
+        const v = o[k];
         if (v === null || v === undefined) {
           throw new Error("null/undefined cannot round-trip through TOML (nan/inf parse to null in loads() and cannot re-enter)");
         }
