@@ -96,6 +96,36 @@ export interface TeptrisApi {
 
   /** Release a compiled plan. */
   planFree(plan: number): void;
+
+  /** Compile a JSON Schema (the 2020-12 practical subset:
+   *  [SCHEMAS.md](https://github.com/leptris/teptris)). Compile once,
+   *  validate many; the handle is reusable across documents. Throws
+   *  Error carrying the engine's diag JSON when the schema is
+   *  rejected (unsupported constructs are named, never silently
+   *  ignored). */
+  compileSchema(schemaJson: string): Schema;
+}
+
+/** One validation failure: `path` is the materialized TOML path,
+ *  `schemaPath` the position in the schema, `message` the reason. */
+export interface SchemaViolation {
+  path: string;
+  schemaPath: string;
+  message: string;
+}
+
+/** A compiled schema handle (immutable; thread of use = the wasm
+ *  module it came from). free() releases the engine side. */
+export class Schema {
+  /** Validate raw TOML; returns every violation (empty = valid).
+   *  Throws (with .status) when the document does not parse. */
+  validate(toml: string): SchemaViolation[];
+
+  /** True when the document parses and has no violations. */
+  isValid(toml: string): boolean;
+
+  /** Release the compiled schema. Idempotent. */
+  free(): void;
 }
 
 /** An opaque retained-document handle from {@link TeptrisApi.loadsDoc}

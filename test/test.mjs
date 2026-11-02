@@ -288,3 +288,107 @@ test("dump accepts Date values (the JS ecosystem datetime shape)", async () => {
   // a Date was previously mis-typed as a table (an opaque engine error)
   assert.deepEqual(loads(dump(nested)), { o: { d: "2026-11-02T10:00:00Z" } });
 });
+
+// ---- schema validation (engine 0.3.20) ----
+
+const { compileSchema } = await init();
+
+const manifestSchema = JSON.stringify({
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 1 },
+    port: { type: "integer", minimum: 1 },
+    mode: { enum: ["fast", "safe"] },
+  },
+  required: ["name", "port"],
+});
+
+test("compileSchema + validate: typed violations", () => {
+  const schema = compileSchema(manifestSchema);
+  const ok = schema.validate('name = "srv"\nport = 8080\n');
+  assert.deepEqual(ok, []);
+  assert.equal(schema.isValid('name = "srv"\nport = 8080\n'), true);
+
+  const bad = schema.validate('name = ""\nport = 0\n');
+  assert.equal(bad.length, 2);
+  assert.deepEqual(
+    Object.keys(bad[0]).sort(),
+    ["message", "path", "schemaPath"]);
+  assert.equal(bad[0].path, "name");
+  assert.equal(bad[1].path, "port");
+
+  const missing = schema.validate("port = 1\n");
+  assert.equal(missing.length, 1);
+  assert.equal(missing[0].path, "");
+  assert.ok(missing[0].message.includes("name"));
+
+  assert.equal(schema.isValid("port = 1\n"), false);
+});
+
+test("compile rejects unsupported constructs with the named keyword", () => {
+  assert.throws(
+    () => compileSchema('{"unevaluatedProperties":false}'),
+    (e) => e instanceof Error && /unevaluatedProperties/.test(e.message));
+  assert.throws(
+    () => compileSchema('{"$ref":"https://x.example/s.json"}'),
+    (e) => e instanceof Error && /remote/.test(e.message));
+  assert.throws(
+    () => compileSchema('{"type":}'),
+    (e) => e instanceof Error && /error/.test(e.message));
+});
+
+test("unknown keywords are extensions, not rejections", () => {
+  const schema = compileSchema(
+    '{"x-vendor":true,"properties":{"k":{"type":"integer"}}}');
+  assert.equal(schema.isValid("k = 1\n"), true);
+  assert.equal(schema.isValid('k = "s"\n'), false);
+});
+
+test("the four policies hold from JS", () => {
+  // policy 2: float never integer; enum type-strict
+  const strict = compileSchema('{"properties":{"k":{"enum":[1]}}}');
+  assert.equal(strict.isValid("k = 1\n"), true);
+  assert.equal(strict.isValid("k = 1.0\n"), false);
+
+  // policy 3: datetimes are strings with formats
+  const dt = compileSchema(
+    '{"properties":{"k":{"type":"string","format":"date-time"}}}');
+  assert.equal(dt.isValid("k = 2026-01-02T03:04:05Z\n"), true);
+  assert.equal(dt.isValid('k = "soon"\n'), false);
+
+  // policy 4: nan fails every ordered comparison, inf rides minimums
+  const lo = compileSchema('{"properties":{"k":{"minimum":0}}}');
+  assert.equal(lo.isValid("k = nan\n"), false);
+  assert.equal(lo.isValid("k = inf\n"), true);
+
+  // policy 1: bare null in a type array means "or absent"
+  const opt = compileSchema('{"properties":{"k":{"type":["string",null]}}}');
+  assert.equal(opt.isValid('k = "s"\n'), true);
+  assert.equal(opt.isValid("j = 1\n"), true);
+  assert.equal(opt.isValid("k = 1\n"), false);
+});
+
+test("recursive $ref memoizes", () => {
+  const tree = compileSchema(
+    '{"properties":{"v":{"type":"integer"},' +
+    '"kids":{"type":"array","items":{"$ref":"#"}}},"required":["v"]}');
+  assert.equal(
+    tree.isValid("v = 0\n[[kids]]\nv = 1\n[[kids.kids]]\nv = 2\n"),
+    true);
+  const bad = tree.validate('v = 0\n[[kids]]\nv = "x"\n');
+  assert.equal(bad.length, 1);
+  assert.equal(bad[0].path, "kids.0.v");
+});
+
+test("syntax errors throw with the engine status", () => {
+  const schema = compileSchema("{}");
+  assert.throws(() => schema.validate("a = = 1\n"),
+                (e) => e instanceof Error && e.status > 0);
+});
+
+test("free() releases and is idempotent", () => {
+  const schema = compileSchema("{}");
+  assert.equal(schema.isValid("k = 1\n"), true);
+  schema.free();
+  schema.free();
+});
