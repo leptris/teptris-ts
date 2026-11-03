@@ -402,16 +402,16 @@ test("the taplo parity surface rides engine 0.3.21", async () => {
     deps.validate("credit_card = 1\nbilling_address = 'x'\n").length, 0);
 
   const tuple = compileSchema(
-    '{"items":[{"type":"string"}],"additionalItems":false}'
+    '{"properties":{"t":{"items":[{"type":"string"}],"additionalItems":false}}}'
   );
   assert.equal(tuple.validate("t = ['x']\n").length, 0);
   assert.equal(tuple.validate("t = ['x', 1]\n").length, 1);
 
-  const mult = compileSchema('{"multipleOf":0.1}');
+  const mult = compileSchema('{"properties":{"k":{"multipleOf":0.1}}}');
   assert.equal(mult.validate("k = 0.3\n").length, 0);
   assert.equal(mult.validate("k = 0.35\n").length, 1);
 
-  const uuid = compileSchema('{"format":"uuid"}');
+  const uuid = compileSchema('{"properties":{"k":{"format":"uuid"}}}');
   assert.equal(
     uuid.validate("k = '123e4567-e89b-12d3-a456-426614174000'\n").length, 0);
   assert.equal(uuid.validate("k = 'nope'\n").length, 1);
