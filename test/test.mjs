@@ -460,3 +460,18 @@ test("the SOTA surface rides engine 0.3.22", () => {
   assert.equal(local.validate("k = 07:32:00\n").length, 0);
   assert.equal(local.validate("k = '07:32:00Z'\n").length, 1);
 });
+
+test("vendored metaschemas resolve in memory (engine 0.3.23)", () => {
+  const schema = compileSchema(
+    '{"$ref":"https://json-schema.org/draft/2020-12/schema"}'
+  );
+  assert.equal(schema.validate('type = "string"\n').length, 0);
+  assert.equal(schema.validate("type = 123\n").length, 1);
+
+  const d7 = compileSchema(
+    '{"$ref":"http://json-schema.org/draft-07/schema#"}'
+  );
+  assert.equal(d7.validate('description = "d"\n').length, 0);
+
+  assert.equal(engineVersion(), "0.3.23");
+});
