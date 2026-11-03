@@ -351,7 +351,9 @@ test("the four policies hold from JS", () => {
   // policy 2: float never integer; enum type-strict
   const strict = compileSchema('{"properties":{"k":{"enum":[1]}}}');
   assert.equal(strict.isValid("k = 1\n"), true);
-  assert.equal(strict.isValid("k = 1.0\n"), false);
+  // 2020-12 numeric identity since engine 0.3.23
+  assert.equal(strict.isValid("k = 1.0\n"), true);
+  assert.equal(strict.isValid("k = 1.5\n"), false);
 
   // policy 3: datetimes are strings with formats
   const dt = compileSchema(
