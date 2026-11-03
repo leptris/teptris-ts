@@ -326,9 +326,12 @@ test("compileSchema + validate: typed violations", () => {
 });
 
 test("compile rejects unsupported constructs with the named keyword", () => {
+  // unevaluatedProperties is enforced since engine 0.3.22
+  const enforced = compileSchema('{"unevaluatedProperties":false}');
+  assert.equal(enforced.validate("a = 1\n").length, 1);
   assert.throws(
-    () => compileSchema('{"unevaluatedProperties":false}'),
-    (e) => e instanceof Error && /unevaluatedProperties/.test(e.message));
+    () => compileSchema('{"$ref":"https://x.example/s.json"}'),
+    (e) => e instanceof Error && /remote/.test(e.message));
   assert.throws(
     () => compileSchema('{"$ref":"https://x.example/s.json"}'),
     (e) => e instanceof Error && /remote/.test(e.message));
@@ -415,4 +418,45 @@ test("the taplo parity surface rides engine 0.3.21", async () => {
   assert.equal(
     uuid.validate("k = '123e4567-e89b-12d3-a456-426614174000'\n").length, 0);
   assert.equal(uuid.validate("k = 'nope'\n").length, 1);
+});
+
+
+test("the SOTA surface rides engine 0.3.22", () => {
+  // the cousin rule: allOf siblings do not share annotations
+  const cousin = compileSchema(
+    '{"allOf":[{"properties":{"a":{}}},{"unevaluatedProperties":false}]}'
+  );
+  assert.equal(cousin.validate("a = 1\n").length, 1);
+
+  // same-object adjacency holds
+  const adjacent = compileSchema(
+    '{"properties":{"a":{}},"unevaluatedProperties":false}'
+  );
+  assert.equal(adjacent.validate("a = 1\n").length, 0);
+  assert.equal(adjacent.validate("a = 1\nb = 2\n").length, 1);
+
+  // dynamic refs resolve to the innermost anchor
+  const tree = compileSchema(
+    '{"$dynamicAnchor":"node","type":"object","properties":' +
+    '{"value":{"type":"integer"},"children":{"type":"array",' +
+    '"items":{"$dynamicRef":"#node"}}}}'
+  );
+  assert.equal(tree.validate("value = 1\n[[children]]\nvalue = 2\n").length, 0);
+  assert.equal(tree.validate("value = 1\n[[children]]\nvalue = 'x'\n").length, 1);
+
+  // contentSchema asserts the decoded content
+  const content = compileSchema(
+    '{"properties":{"k":{"contentEncoding":"base64",' +
+    '"contentMediaType":"application/json",' +
+    '"contentSchema":{"type":"object","required":["n"]}}}}'
+  );
+  assert.equal(content.validate("k = 'eyJuIjogMX0='\n").length, 0);
+  assert.equal(content.validate("k = 'W10='\n").length, 1);
+
+  // the TOML-native local formats
+  const local = compileSchema(
+    '{"properties":{"k":{"format":"time-local"}}}'
+  );
+  assert.equal(local.validate("k = 07:32:00\n").length, 0);
+  assert.equal(local.validate("k = '07:32:00Z'\n").length, 1);
 });
