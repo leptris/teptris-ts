@@ -477,3 +477,16 @@ test("vendored metaschemas resolve in memory (engine 0.3.23)", () => {
 
   assert.equal(engineVersion(), "0.3.23");
 });
+
+test("unicode property escapes (engine 0.3.24)", () => {
+  const letter = compileSchema(
+    '{"properties":{"k":{"pattern":"^\\\\p{Letter}+$"}}}'
+  );
+  assert.equal(letter.validate('k = "π"\n').length, 0);
+  assert.equal(letter.validate("k = '123'\n").length, 1);
+  const neg = compileSchema(
+    '{"properties":{"k":{"pattern":"^\\\\P{Letter}+$"}}}'
+  );
+  assert.equal(neg.validate("k = '123'\n").length, 0);
+  assert.equal(engineVersion(), "0.3.24");
+});
