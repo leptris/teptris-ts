@@ -475,7 +475,7 @@ test("vendored metaschemas resolve in memory (engine 0.3.23)", () => {
   );
   assert.equal(d7.validate('description = "d"\n').length, 0);
 
-  assert.equal(engineVersion(), "0.3.23");
+  assert.equal(engineVersion(), "0.3.24");
 });
 
 test("unicode property escapes (engine 0.3.24)", () => {
