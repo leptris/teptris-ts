@@ -475,7 +475,22 @@ test("vendored metaschemas resolve in memory (engine 0.3.23)", () => {
   );
   assert.equal(d7.validate('description = "d"\n').length, 0);
 
-  assert.equal(engineVersion(), "0.3.24");
+  assert.equal(engineVersion(), "0.3.25");
+});
+
+test("dialect-gated formats (engine 0.3.25)", () => {
+  const plain = compileSchema('{"properties":{"k":{"format":"email"}}}');
+  assert.equal(plain.validate("k = '2962'\n").length, 1);
+  const anno = compileSchema(
+    '{"$schema":"https://json-schema.org/draft/2020-12/schema",' +
+    '"properties":{"k":{"format":"email"}}}'
+  );
+  assert.equal(anno.validate("k = '2962'\n").length, 0);
+  const assertion = compileSchema(
+    '{"$schema":"https://json-schema.org/draft/2020-12/format-assertion",' +
+    '"properties":{"k":{"format":"email"}}}'
+  );
+  assert.equal(assertion.validate("k = '2962'\n").length, 1);
 });
 
 test("unicode property escapes (engine 0.3.24)", () => {
@@ -488,5 +503,5 @@ test("unicode property escapes (engine 0.3.24)", () => {
     '{"properties":{"k":{"pattern":"^\\\\P{Letter}+$"}}}'
   );
   assert.equal(neg.validate("k = '123'\n").length, 0);
-  assert.equal(engineVersion(), "0.3.24");
+  assert.equal(engineVersion(), "0.3.25");
 });
