@@ -325,6 +325,15 @@ test("compileSchema + validate: typed violations", () => {
   assert.equal(schema.isValid("port = 1\n"), false);
 });
 
+test("compileSchema: long plain tail after an escape", () => {
+  // engine 0.3.26: the JSON reader sized the escaped-string rebuild
+  // from the prefix alone; a long plain tail after the first escape
+  // wrote past the arena block (fuzz finding)
+  const json = '{"description":"A\\u00e9' + "B".repeat(128 * 1024) + '"}';
+  const schema = compileSchema(json);
+  assert.equal(schema.validate("k = 1\n").length, 0);
+});
+
 test("compile rejects unsupported constructs with the named keyword", () => {
   // unevaluatedProperties is enforced since engine 0.3.22
   const enforced = compileSchema('{"unevaluatedProperties":false}');
