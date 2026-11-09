@@ -389,8 +389,31 @@ export function initApi(mod) {
         byte(3); i64(v); return;
       }
       if (typeof v === "string") {
+        // RFC 3339-SHAPED strings re-enter as datetimes. The literal
+        // rides as raw TEXT (writer op 0x0F, engine 0.3.27) and the
+        // ENGINE parses it at op decode - the JS regex field
+        // extraction is gone from the hot path (datetime_heavy was
+        // parseDateTime-bound). Output stays byte-identical: the
+        // writer emits canonical datetime text from the parsed
+        // fields. A shape-valid, calendar-invalid literal (2026-02-30)
+        // now errors loudly instead of re-entering as invalid TOML.
         if (maybeRfc3339(v) && RFC3339.test(v)) {
-          writeDatetime(null, parseDateTime(v));
+          ensure(5 + v.length * 3);
+          buf[n++] = 15; /* W_DATETIME_TEXT */
+          let ascii = true;
+          for (let i = 0; i < v.length; i++) {
+            const c = v.charCodeAt(i);
+            if (c > 127) { ascii = false; break; }
+            buf[n + 4 + i] = c;
+          }
+          if (ascii) {
+            dv.setUint32(n, v.length, true);
+            n += 4 + v.length;
+          } else {
+            const { written } = utf8enc.encodeInto(v, buf.subarray(n + 4));
+            dv.setUint32(n, written, true);
+            n += 4 + written;
+          }
           return;
         }
         ensure(5 + v.length * 3);
@@ -501,7 +524,8 @@ export function initApi(mod) {
     const st = mod._teptris_wasm_dump_ops(ptr, n);
     mod._teptris_wasm_free(ptr);
     if (st !== 0) {
-      throw new Error(`dump failed (status ${st})`);
+      throw new Error(`dump failed (status ${st}): ${
+        UTF8ToString(mod._teptris_wasm_last_error())}`);
     }
     return readOut(mod._teptris_wasm_toml());
   }
