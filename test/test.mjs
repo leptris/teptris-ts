@@ -289,6 +289,18 @@ test("dump accepts Date values (the JS ecosystem datetime shape)", async () => {
   assert.deepEqual(loads(dump(nested)), { o: { d: "2026-11-02T10:00:00Z" } });
 });
 
+test("dump: datetime literals ride as text (engine 0.3.27 DATETIME-TEXT)", () => {
+  // the literal crosses the bridge RAW; the engine parses it at op
+  // decode (teptris_datetime_from_str) and emits canonical bytes -
+  // no JS regex/field-extraction on the dump hot path
+  assert.equal(dump({ d: "2026-11-02T10:00:00Z" }), "d = 2026-11-02T10:00:00Z\n");
+  // the ms form (Date.toISOString's shape) normalizes
+  assert.equal(dump({ d: "2026-11-02T10:00:00.000Z" }), "d = 2026-11-02T10:00:00Z\n");
+  // shape-valid, calendar-invalid literals error loudly (the engine
+  // is the datetime authority)
+  assert.throws(() => dump({ d: "2026-02-30" }), /invalid/);
+});
+
 // ---- schema validation (engine 0.3.20) ----
 
 const { compileSchema } = await init();
@@ -484,7 +496,7 @@ test("vendored metaschemas resolve in memory (engine 0.3.23)", () => {
   );
   assert.equal(d7.validate('description = "d"\n').length, 0);
 
-  assert.equal(engineVersion(), "0.3.26");
+  assert.equal(engineVersion(), "0.3.27");
 });
 
 test("dialect-gated formats (engine 0.3.26)", () => {
@@ -512,5 +524,5 @@ test("unicode property escapes (engine 0.3.24)", () => {
     '{"properties":{"k":{"pattern":"^\\\\P{Letter}+$"}}}'
   );
   assert.equal(neg.validate("k = '123'\n").length, 0);
-  assert.equal(engineVersion(), "0.3.26");
+  assert.equal(engineVersion(), "0.3.27");
 });

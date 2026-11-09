@@ -209,6 +209,8 @@ int teptris_wasm_dump_doc(void) {
 /* fused dumps: the JS side encodes one op-stream (writer grammar),
  * this builds TOML in one crossing - no per-value builder calls, no
  * DOM */
+
+
 EMSCRIPTEN_KEEPALIVE
 int teptris_wasm_dump_ops(const uint8_t *ops, size_t len) {
     teptris_writer *w = teptris_writer_new();
@@ -232,7 +234,6 @@ int teptris_wasm_dump_ops(const uint8_t *ops, size_t len) {
     }
     return (int)st;
 }
-
 
 static int finish_with(void *b,
                        teptris_status (*emit)(const teptris_document *,
