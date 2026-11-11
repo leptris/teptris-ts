@@ -496,7 +496,7 @@ test("vendored metaschemas resolve in memory (engine 0.3.23)", () => {
   );
   assert.equal(d7.validate('description = "d"\n').length, 0);
 
-  assert.equal(engineVersion(), "0.3.28");
+  assert.equal(engineVersion(), "0.3.29");
 });
 
 test("dialect-gated formats (engine 0.3.26)", () => {
@@ -524,5 +524,5 @@ test("unicode property escapes (engine 0.3.24)", () => {
     '{"properties":{"k":{"pattern":"^\\\\P{Letter}+$"}}}'
   );
   assert.equal(neg.validate("k = '123'\n").length, 0);
-  assert.equal(engineVersion(), "0.3.28");
+  assert.equal(engineVersion(), "0.3.29");
 });
