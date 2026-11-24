@@ -628,12 +628,16 @@ export function initApi(mod) {
       }
     }
     // parent rows first; sub-plans laid out after them (first[] grows
-    // in plan order — the C layout contract). SIBLING nested rows must
-    // not capture the same index: patch sub after each child block.
+    // in plan order — the C layout contract). Each child block's plan
+    // index is its own flattenInto call's ENTRY-time first.length - 1 —
+    // NOT a post-recursion first.length - 1 read, which captures the
+    // deepest descendant laid out during the recursion (issue #67: a
+    // depth-2 parent then walked its table against the grandchild's
+    // plan). SIBLING nested rows still patch from their own child
+    // block's returned index, so they never capture the same slot.
     for (const [slot, children] of pending) {
       first.push(flat.length);
-      flattenInto(children, flat, first, namePtrs, pending);
-      flat[slot].sub = first.length - 1;
+      flat[slot].sub = flattenInto(children, flat, first, namePtrs);
     }
     // the end sentinel for the last plan (first[] has plan_count+1
     // entries — its absence made every sub index point past the end)
@@ -661,7 +665,13 @@ export function initApi(mod) {
     return plan;
   }
 
-  function flattenInto(rows, flat, first, namePtrs, pending) {
+  // Depth-first plan layout — the rust/py entry-time contract: the
+  // block's plan index is first.length - 1 AT ENTRY (the parent pushed
+  // its first[] slot before the call), and a nested row's sub is that
+  // child block's RETURNED index even when the recursion lays out
+  // further plans below it. Returns this block's plan index.
+  function flattenInto(rows, flat, first, namePtrs) {
+    const idx = first.length - 1;
     const slots = []; // [flatSlot, children]
     for (const r of rows) {
       const name = typeof r === "string" ? r : r.name;
@@ -685,9 +695,9 @@ export function initApi(mod) {
     }
     for (const [slot, children] of slots) {
       first.push(flat.length);
-      flattenInto(children, flat, first, namePtrs, pending);
-      flat[slot].sub = first.length - 1;
+      flat[slot].sub = flattenInto(children, flat, first, namePtrs);
     }
+    return idx;
   }
 
   function planWalk(plan, toml) {

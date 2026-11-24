@@ -567,9 +567,19 @@ static int asm_table_rows(teptris_builder *b, const teptris_plan *p,
                     if (entry == NULL) {
                         return 1;
                     }
+                    /* each AoT element is its own container (issue #67):
+                     * the keyless open_table attaches the element to the
+                     * array the same way put_node does for RAW rows —
+                     * without it the entry's rows wrote straight into
+                     * the array frame and the element's first keyed row
+                     * became the element itself, collapsing the level */
+                    if (teptris_builder_open_table(b, NULL, 0) != TEPTRIS_OK) {
+                        return 1;
+                    }
                     int rc = asm_table_rows(b, p, entry, sub);
+                    int crc = rc == 0 ? teptris_builder_close(b) : TEPTRIS_OK;
                     teptris_plan_result_view_free(entry);
-                    if (rc != 0) {
+                    if (rc != 0 || crc != TEPTRIS_OK) {
                         return 1;
                     }
                 } else if (put_array_scalar_result(b, res, i, j) != 0) {

@@ -137,6 +137,85 @@ test("planWalk: sibling nested rows keep their own sub-plans", () => {
   planFree(plan);
 });
 
+// Depth-2+ nesting walks the rs/py row shape exactly (issue #67): the
+// nested sub's column span is assigned at ENTRY (before recursing),
+// never as a post-recursion first.length - 1 patch — that patch
+// captures the DEEPEST descendant laid out during the recursion, so
+// the outer row walked its table against the wrong sub-plan (a's walk
+// ran c's scalar plan: outer c materialized, inner b dropped).
+
+test("planWalk: depth-2 nested sub walks the rs/py row shape", () => {
+  const plan = planBuild([
+    { name: "a", rows: [{ name: "b", rows: ["c"] }] },
+  ]);
+  // a is walked against ITS OWN sub-plan (rows [b]), not b's child
+  // plan (rows [c]) — the reference shapes come from teptris-rs
+  // src/plan.rs layout() and teptris.plan_build (PR #174).
+  const view = planWalk(
+    plan,
+    '[a]\nc = "outer"\n[a.b]\nc = "inner"\n');
+  assert.deepEqual(view, { a: { b: { c: "inner" } } });
+  planFree(plan);
+});
+
+test("planWalk: depth-2 nested sub with no columns keeps the row", () => {
+  // the {"a":{}} probe: an empty inner sub-plan still spans row b —
+  // walking a against an EMPTY plan dropped b from the output
+  const plan = planBuild([
+    { name: "a", rows: [{ name: "b", rows: [] }] },
+  ]);
+  const view = planWalk(plan, "[a]\n[a.b]\nx = 1\n");
+  assert.deepEqual(view, { a: { b: {} } });
+  planFree(plan);
+});
+
+test("planWalk: depth-2 nested over arrays of tables", () => {
+  const plan = planBuild([
+    { name: "items", rows: [{ name: "meta", rows: ["tag"] }] },
+  ]);
+  const view = planWalk(
+    plan,
+    '[[items]]\n[items.meta]\ntag = "t1"\n[[items]]\n[items.meta]\ntag = "t2"\n');
+  assert.deepEqual(view,
+    { items: [{ meta: { tag: "t1" } }, { meta: { tag: "t2" } }] });
+  planFree(plan);
+});
+
+test("planWalk: scalar rows keep their keys inside array elements", () => {
+  // the same missing-element-container face of #67: planned scalars
+  // inside [[..]] elements lost their keys (the row wrote into the
+  // array frame, so items rendered [1, 2] instead of [{id: 1}, ...])
+  const plan = planBuild([{ name: "items", rows: ["id"] }]);
+  const view = planWalk(plan, "[[items]]\nid = 1\n[[items]]\nid = 2\n");
+  assert.deepEqual(view, { items: [{ id: 1 }, { id: 2 }] });
+  planFree(plan);
+});
+
+test("planWalk: sibling rows survive a depth-2 sibling (entry-time subs)", () => {
+  // the sibling-capture face of #67: with the post-recursion patch,
+  // n.sub captured m's child plan instead of its own
+  const plan = planBuild([
+    { name: "a", rows: ["x"] },
+    { name: "n", rows: [{ name: "m", rows: ["y"] }] },
+  ]);
+  const view = planWalk(plan, "[a]\nx = 1\n[n]\n[n.m]\ny = 2\n");
+  assert.deepEqual(view, { a: { x: 1 }, n: { m: { y: 2 } } });
+  planFree(plan);
+});
+
+test("planWalk: depth-3 nesting follows the rs entry-time layout", () => {
+  // documented per the rs implementation's behavior: layout() returns
+  // the block's index captured at entry, so arbitrary depth composes —
+  // each level's sub points at its own child block, never a
+  // descendant's descendant
+  const plan = planBuild([
+    { name: "a", rows: [{ name: "b", rows: [{ name: "c", rows: ["d"] }] }] },
+  ]);
+  const view = planWalk(plan, "[a]\n[a.b]\n[a.b.c]\nd = 9\n");
+  assert.deepEqual(view, { a: { b: { c: { d: 9 } } } });
+  planFree(plan);
+});
+
 test("planWalk: one plan serves many documents", () => {
   const plan = planBuild(["v"]);
   assert.deepEqual(planWalk(plan, "v = 1\n"), { v: 1 });
